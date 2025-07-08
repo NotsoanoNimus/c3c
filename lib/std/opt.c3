@@ -495,6 +495,12 @@ faultdef
     ;
 
 
+<*
+Reset static option index to 1 (past first implicit arg) and static option reset to 1 (i.e., 'true').
+*>
+macro @reset() => reset = ind = 1;
+
+
 macro void? @parse(#args, ...)
 {
     $assert ($vacount % 3) == 0 : `Options must be specified in triplets as "{letter}", "{longopt}", {store-ptr}.`;
