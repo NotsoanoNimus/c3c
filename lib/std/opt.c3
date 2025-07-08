@@ -34,8 +34,11 @@ enum OptionArgType : const inline int
     NO_ARGUMENT,
     REQUIRED_ARGUMENT,
     OPTIONAL_ARGUMENT,
-    INCREMENTAL
+    INCREMENTAL,
+    CALLBACK,
 }
+
+alias OptionCallback = fn void? (String);
 
 // Used for long options - equivalent to 'struct option' in most C projects.
 struct LongOption
@@ -503,15 +506,15 @@ macro void? @parse(#args, ...)
     // Set up a dynamically filled longopts.
     LongOption[($vacount / 3)] longopts;
 
-    var $dyn_opt_str = "";
-    var $ct_argstype = (OptionArgType[$vacount / 3]){};
-    var $ct_longnames = (String[$vacount / 3]){};
-    var $ct_shortnames = (char[$vacount / 3]){};
+    var $dyn_opt_str = "";   // dynamic option_str
+    var $ct_argstype = (OptionArgType[$vacount / 3]){};   // indexing for OptionArgType
+    var $ct_longnames = (String[$vacount / 3]){};   // indexing for longnames
+    var $ct_shortnames = (char[$vacount / 3]){};   // indexing for shortnames
 
+    // Iterate each provided triplet and build up all compile-time indices with accurate information.
     $for var $argidx = 0; $argidx < $vacount; $argidx += 3 :
         var $shortname = $vaconst[$argidx];
         var $longname = $vaconst[$argidx + 1];
-        var $has_arg = OptionArgType.NO_ARGUMENT;
 
         $assert $longname.len > 0 : "You must specify a long name to use for each option.";
         $assert $shortname.len > 0 : "You must specify a short name to use for each option.";
@@ -519,22 +522,25 @@ macro void? @parse(#args, ...)
         $assert ($shortname[0] >= 'a' &&& $shortname[0] <= 'z')
             ||| ($shortname[0] <= 'A' &&& $shortname[0] >= 'Z')
             ||| ($shortname[0] <= '0' &&& $shortname[0] >= '9')
-            ||| $shortname[0] == '?' ||| $shortname[0] == '-'
+            ||| $shortname[0] == '-'
                 : `Short-name options should match the following regular expression: [a-zA-Z0-9\?-][\+\?]?`;
 
-        $dyn_opt_str = $dyn_opt_str +++ $shortname[0];
+        $dyn_opt_str = $dyn_opt_str +++ $shortname[0];   // concat shortname onto dynamic option_str
 
-        // The third param MUST be a pointer/reference type.
-        $assert $typeof($vaarg[$argidx + 2]).kindof == TypeKind.POINTER
+        // The third param MUST be a pointer/reference or function type.
+        $assert $typeof($vaarg[$argidx + 2]).kindof == TypeKind.POINTER || $typeof($vaarg[$argidx + 2]).kindof == TypeKind.FUNC
             : "The parameter reference " +++ $typeof($vaarg[$argidx + 2]).nameof +++ " is not a pointer type.";
 
+        var $has_arg = OptionArgType.NO_ARGUMENT;   // default
+
         // Only 'bool*' types represent flags, which do not have arguments.
-        $if ! types::is_bool(($typeof($vaarg[$argidx + 2])).inner) : //$typeof($vaarg[$argidx + 2]).inner.kindof != TypeKind.BOOL :
+        $if $typeof($vaarg[$argidx + 2]).kindof == TypeKind.FUNC ||| ! types::is_bool(($typeof($vaarg[$argidx + 2])).inner) :
             $switch :
                 // Furthermore, for non-flags which have arguments, they might be optional.
                 $case $shortname.len >= 2 &&& $shortname[1] == '?' :
                     $has_arg = OptionArgType.OPTIONAL_ARGUMENT;
                     $dyn_opt_str = $dyn_opt_str +++ "::";
+
                 // ... or incremental. Incremental argument types do not accept arguments.
                 $case $shortname.len >= 2 &&& $shortname[1] == '+' :
                     $has_arg = OptionArgType.INCREMENTAL;
@@ -542,6 +548,12 @@ macro void? @parse(#args, ...)
                     $assert ($typeof($vaarg[$argidx + 2]).nameof == (uint*).typeid.nameof)
                         : "Incremental option '" +++ $shortname +++ "' must be of type 'uint*' (but got '"
                             +++ $typeof($vaarg[$argidx + 2]).nameof +++ "' instead).";
+
+                // ... or a callback. Callback types DO accept a string argument to pass to themselves.
+                $case $typeof($vaarg[$argidx + 2]).kindof == TypeKind.FUNC:
+                    $has_arg = OptionArgType.CALLBACK;
+                    $dyn_opt_str = $dyn_opt_str +++ ":";
+
                 $default :
                     $has_arg = OptionArgType.REQUIRED_ARGUMENT;
                     $dyn_opt_str = $dyn_opt_str +++ ":";
@@ -564,7 +576,7 @@ macro void? @parse(#args, ...)
         $endfor
     $endfor
 
-    longopts[^1] = {};   // always ends with an explicit empty LongOption
+    longopts[^1] = {};   // always ends with an explicit empty LongOption (aka, "sentinel" value)
     opt::reset = 1;   // reset getopt_long/getopt
 
     // This macro wraps a `getopt_long` call.
@@ -572,23 +584,36 @@ macro void? @parse(#args, ...)
     int optval;
     while (-1 != (optval = opt::get_long(#args, $dyn_opt_str, longopts[..], &longopt_index)))
     {
-        if CT_SWITCH: (true)
+        if CT_SWITCH: (true)   // cheesy CT workaround for lack of dynamic CT cases in $switch
         {
             if ('?' == optval) return HELP_REQUESTED?;
             if (':' == optval) return ILLEGAL_OPTION?;
 
             $for var $argidx = 0; $argidx < $vacount; $argidx += 3 :
+                // Redefine these...
                 var $shortname = $vaconst[$argidx];
                 var $longname = $vaconst[$argidx + 1];
-                var $ToType = $typeof($vaarg[$argidx + 2]);
 
                 if ((int)($shortname[0]) == optval)
                 {
+                    // An option handler should never be considered valid if the longopt_index exceeds the size of (longopts - [sentinel]).
                     if (longopt_index >= longopts.len - 1) return INVALID_LONGOPT?;
 
+                    // Now set the option handler's behavior based on the type of argument (if any) that's expected.
                     $switch ($ct_argstype[($argidx / 3)]) :
                         $case OptionArgType.NO_ARGUMENT: *($vaarg[$argidx + 2]) = true;
+
                         $case OptionArgType.INCREMENTAL: *($vaarg[$argidx + 2]) = *($vaarg[$argidx + 2]) + 1;
+
+                        $case OptionArgType.CALLBACK:
+                            if (null == opt::arg.ptr || !opt::arg.len) return MISSING_ARGUMENT?;   // callbacks MUST have an argument to pass
+
+                            $assert $typeof($vaarg[$argidx + 2]).nameof == OptionCallback.typeid.nameof
+                                : "Callback argument types must provide a function reference of type OptionCallback. Got '" +++ $typeof($vaarg[$argidx + 2]).nameof +++ "'.";
+
+                            // Call the callback method.
+                            ($vaarg[$argidx + 2])(opt::arg)!;
+
                         $default:
                             if (null == opt::arg.ptr || !opt::arg.len)
                             {
@@ -605,14 +630,16 @@ macro void? @parse(#args, ...)
                             var $ArgType = $typeof($vaarg[$argidx + 2]);
                             var $SingleDerefArgType = $ArgType.inner;
 
-                            var $DerefArgType = $SingleDerefArgType;
+                            var $DerefArgType = $SingleDerefArgType;   // keep digging until the type is no longer a pointer
                             $for ; $DerefArgType.kindof == TypeKind.POINTER; :
                                 $DerefArgType = $DerefArgType.inner;
                             $endfor
 
                             $switch ($DerefArgType.kindof) :
                                 $case TypeKind.VOID :
-                                    $error "Cannot assign parameter values to void pointers.";
+                                    $error "Cannot assign parameter values to void values or void pointers.";
+                                $case TypeKind.POINTER :
+                                    $error "Cannot assign parameter values to pointers.";
                                 $case TypeKind.FUNC :
                                     $error "Cannot assign parameter values to functions or function pointers.";
                                 $case TypeKind.OPTIONAL :
