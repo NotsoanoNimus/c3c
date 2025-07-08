@@ -3,7 +3,7 @@
 // a copy of which can be found in the LICENSE_STDLIB file.
 //
 // This is both a port of the classic C 'getopt' and 'getopt_long', with
-//   an additional C3-specific way to act use command-line options.
+//   an additional C3-specific way to use command-line options.
 //
 //
 // Original `getopt` and `getopt_long` code translated from a FreeBSD implementation:
