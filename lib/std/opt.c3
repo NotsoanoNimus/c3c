@@ -501,6 +501,17 @@ Reset static option index to 1 (past first implicit arg) and static option reset
 macro @reset() => reset = ind = 1;
 
 
+<*
+Globally disable any error outputs to STDERR from this module.
+*>
+macro @disable_errors() => err = 0;
+
+<*
+Globally enable error outputs to STDERR from this module.
+*>
+macro @enable_errors() => err = 1;
+
+
 macro void? @parse(#args, ...)
 {
     $assert ($vacount % 3) == 0 : `Options must be specified in triplets as "{letter}", "{longopt}", {store-ptr}.`;
