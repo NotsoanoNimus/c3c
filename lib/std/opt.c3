@@ -38,7 +38,7 @@ enum OptionArgType : const inline int
 }
 
 // Used for long options - equivalent to 'struct option' in most C projects.
-struct Option
+struct LongOption
 {
     ZString name;
     OptionArgType has_arg;
@@ -64,7 +64,7 @@ int reset;   /* reset getopt scanning pointer */
 String arg;   /* argument string associated with option */
 
 
-// Local variables.
+// Module-local static variables.
 char* place @local = &PLACEHOLDER[0];
 
 int nonopt_start @local = -1;
@@ -105,7 +105,7 @@ fn void permute_args(int panonopt_start, int panonopt_end, int opt_end, String[]
 
 
 fn int parse_long_options(
-    String[] args, ZString option_str, Option[] options, int* idx, int short_too, GetoptFlags flags
+    String[] args, ZString option_str, LongOption[] options, int* idx, int short_too, GetoptFlags flags
 ) @local
 {
     char* current_dash;
@@ -262,7 +262,7 @@ fn int parse_long_options(
 
 
 fn int getopt_internal(
-    String[] args, ZString option_str, Option[] options, int* options_index, GetoptFlags flags
+    String[] args, ZString option_str, LongOption[] options, int* options_index, GetoptFlags flags
 ) @local
 {
     // NOTE: This translation of getopt_internal assumes POSIXLY_CORRECT == true; therefore, all occurrences
@@ -472,10 +472,10 @@ fn int getopt_internal(
 fn int get(String[] args, ZString option_str) @public
     => getopt_internal(args, option_str, {}, null, {});
 
-fn int get_long(String[] args, ZString option_str, Option[] options, int* options_index) @public
+fn int get_long(String[] args, ZString option_str, LongOption[] options, int* options_index) @public
     => getopt_internal(args, option_str, options, options_index, { .permute = true });
 
-fn int get_long_only(String[] args, ZString option_str, Option[] options, int* options_index) @public
+fn int get_long_only(String[] args, ZString option_str, LongOption[] options, int* options_index) @public
     => getopt_internal(args, option_str, options, options_index, { .permute = true, .long_only = true });
 
 
@@ -488,46 +488,48 @@ fn int get_long_only(String[] args, ZString option_str, Option[] options, int* o
 
 faultdef
     HELP_REQUESTED, MISSING_ARGUMENT, ILLEGAL_OPTION,
-    INVALID_LONGOPT
+    INVALID_LONGOPT, OUT_OF_BOUNDS, INVALID_FORMAT
     ;
 
 
 macro void? @parse(#args, ...)
 {
-    $if ($vacount % 3) != 0 :
-        $error(`Options must be specified in triplets as "{letter}", "{longopt}", {store-ptr}.`);
-    $endif
+    $assert ($vacount % 3) == 0 : `Options must be specified in triplets as "{letter}", "{longopt}", {store-ptr}.`;
 
-    Option[($vacount / 3)] longopts;
+    // Used for sequentially filling array args for repeating options.
+    //   256 of these because that's the width of one shortname, which is how the indices themselves are indexed.
+    static ushort[256] array_storage_indexes;
+
+    // Set up a dynamically filled longopts.
+    LongOption[($vacount / 3)] longopts;
+
     var $dyn_opt_str = "";
     var $ct_argstype = (OptionArgType[$vacount / 3]){};
+    var $ct_longnames = (String[$vacount / 3]){};
+    var $ct_shortnames = (char[$vacount / 3]){};
 
     $for var $argidx = 0; $argidx < $vacount; $argidx += 3 :
         var $shortname = $vaconst[$argidx];
         var $longname = $vaconst[$argidx + 1];
         var $has_arg = OptionArgType.NO_ARGUMENT;
 
-        $if ! $longname.len :
-            $error("You must specify a long name to use for each option.");
-        $endif
+        $assert $longname.len > 0 : "You must specify a long name to use for each option.";
+        $assert $shortname.len > 0 : "You must specify a short name to use for each option.";
 
-        $if $shortname.len :
-            $if ($shortname[0] < 'a' ||| $shortname[0] > 'z')
-                &&& ($shortname[0] < 'A' ||| $shortname[0] > 'Z')
-                &&& ($shortname[0] < '0' ||| $shortname[0] > '9')
-                &&& $shortname[0] != '?' &&& $shortname[0] != '-' :
-                    $error `Short-name options should match the following expression: [a-zA-Z0-9\?-]`;
-            $endif
-            $dyn_opt_str = $dyn_opt_str +++ $shortname[0];
-        $endif
+        $assert ($shortname[0] >= 'a' &&& $shortname[0] <= 'z')
+            ||| ($shortname[0] <= 'A' &&& $shortname[0] >= 'Z')
+            ||| ($shortname[0] <= '0' &&& $shortname[0] >= '9')
+            ||| $shortname[0] == '?' ||| $shortname[0] == '-'
+                : `Short-name options should match the following regular expression: [a-zA-Z0-9\?-][\+\?]?`;
+
+        $dyn_opt_str = $dyn_opt_str +++ $shortname[0];
 
         // The third param MUST be a pointer/reference type.
-        // $if !$typeof($vaarg[$argidx + 2]).nameof.ends_with("*") :
-        //     $error("The parameter reference " +++ $typeof($vaarg[$argidx + 2]).nameof +++ " is not a reference type.");
-        // $endif
+        $assert $typeof($vaarg[$argidx + 2]).kindof == TypeKind.POINTER
+            : "The parameter reference " +++ $typeof($vaarg[$argidx + 2]).nameof +++ " is not a pointer type.";
 
         // Only 'bool*' types represent flags, which do not have arguments.
-        $if $typeof($vaarg[$argidx + 2]).nameof != (bool*).typeid.nameof :
+        $if ! types::is_bool(($typeof($vaarg[$argidx + 2])).inner) : //$typeof($vaarg[$argidx + 2]).inner.kindof != TypeKind.BOOL :
             $switch :
                 // Furthermore, for non-flags which have arguments, they might be optional.
                 $case $shortname.len >= 2 &&& $shortname[1] == '?' :
@@ -536,10 +538,10 @@ macro void? @parse(#args, ...)
                 // ... or incremental. Incremental argument types do not accept arguments.
                 $case $shortname.len >= 2 &&& $shortname[1] == '+' :
                     $has_arg = OptionArgType.INCREMENTAL;
-                    $if $typeof($vaarg[$argidx + 2]).nameof != (uint*).typeid.nameof :
-                        $error "Incremental option '" +++ $shortname +++ "' must be of type 'uint*' (but got '"
+
+                    $assert ($typeof($vaarg[$argidx + 2]).nameof == (uint*).typeid.nameof)
+                        : "Incremental option '" +++ $shortname +++ "' must be of type 'uint*' (but got '"
                             +++ $typeof($vaarg[$argidx + 2]).nameof +++ "' instead).";
-                    $endif
                 $default :
                     $has_arg = OptionArgType.REQUIRED_ARGUMENT;
                     $dyn_opt_str = $dyn_opt_str +++ ":";
@@ -551,12 +553,19 @@ macro void? @parse(#args, ...)
 
         // But also track the runtime longopts details.
         longopts[$argidx / 3] = { $longname, $has_arg, null, (int)($shortname[0]) };
+        // ... lest we forget compile-time too.
+        $ct_longnames[$argidx / 3] = $longname;
+        $ct_shortnames[$argidx / 3] = $shortname[0];
+
+        // Quickly check for duplicate short/long option names.
+        $for var $a = 0; $a < ($argidx / 3); ++$a :
+            $assert $ct_longnames[$a] != $longname : "Duplicate long option name '" +++ $longname +++ "' is not allowed.";
+            $assert $ct_shortnames[$a] != $shortname[0] : "Duplicate short option character '" +++ $shortname[0] +++ "' is not allowed.";
+        $endfor
     $endfor
 
-    longopts[^1] = {};   // always ends with an explicit empty Option
+    longopts[^1] = {};   // always ends with an explicit empty LongOption
     opt::reset = 1;   // reset getopt_long/getopt
-
-    $echo "DynOptStr:  " +++ $dyn_opt_str;
 
     // This macro wraps a `getopt_long` call.
     int longopt_index;
@@ -565,7 +574,6 @@ macro void? @parse(#args, ...)
     {
         if CT_SWITCH: (true)
         {
-            io::printf("OPTVAL:  %d\n", optval);
             if ('?' == optval) return HELP_REQUESTED?;
             if (':' == optval) return ILLEGAL_OPTION?;
 
@@ -582,19 +590,60 @@ macro void? @parse(#args, ...)
                         $case OptionArgType.NO_ARGUMENT: *($vaarg[$argidx + 2]) = true;
                         $case OptionArgType.INCREMENTAL: *($vaarg[$argidx + 2]) = *($vaarg[$argidx + 2]) + 1;
                         $default:
-                            if (null != opt::arg.ptr || !opt::arg.len)
+                            if (null == opt::arg.ptr || !opt::arg.len)
                             {
                                 // Optional? Simply continue checking options.
                                 if (OptionArgType.OPTIONAL_ARGUMENT == $ct_argstype[($argidx / 3)]) break CT_SWITCH;
                                 // Required? Throw.
                                 return MISSING_ARGUMENT?;
                             }
+
                             // Set the passed pointer's value.
                             String arg = opt::arg;
+
+                            // Get the direct type, one dereferenced, then the base type (fully dereferenced/flattened).
                             var $ArgType = $typeof($vaarg[$argidx + 2]);
-                            $switch ($ArgType) :
-                                $case int.typeid :
-                                    *($vaarg[$argidx + 2]) = 4;
+                            var $SingleDerefArgType = $ArgType.inner;
+
+                            var $DerefArgType = $SingleDerefArgType;
+                            $for ; $DerefArgType.kindof == TypeKind.POINTER; :
+                                $DerefArgType = $DerefArgType.inner;
+                            $endfor
+
+                            $switch ($DerefArgType.kindof) :
+                                $case TypeKind.VOID :
+                                    $error "Cannot assign parameter values to void pointers.";
+                                $case TypeKind.FUNC :
+                                    $error "Cannot assign parameter values to functions or function pointers.";
+                                $case TypeKind.OPTIONAL :
+                                    $error "Cannot assign parameter values to optionals.";
+                                $case TypeKind.TYPEID :
+                                    $error "Cannot assign parameter values to typeid values.";
+                                $case TypeKind.SLICE :
+                                    $error "Cannot assign parameter values to slices; use an array with a fixed length instead.";
+
+                                $case TypeKind.ARRAY :
+                                    // Disgusting. Re-evaluate the types, but this time without an array wrapping.
+                                    //   This will cause errors on multi-refernce array structures, but those wouldn't work with this macro anyways.
+                                    $ArgType = $typeof($vaarg[$argidx + 2]);
+                                    $SingleDerefArgType = $typeof((*($vaarg[$argidx + 2]))[0]);
+                                    $DerefArgType = $SingleDerefArgType;
+                                    $for ; $DerefArgType.kindof == TypeKind.POINTER; :
+                                        $DerefArgType = $DerefArgType.inner;
+                                    $endfor
+
+                                    ushort current_index = array_storage_indexes[(char)$shortname[0]];
+
+                                    if (current_index >= (*($vaarg[$argidx + 2])).len) return OUT_OF_BOUNDS?;
+
+                                    (*($vaarg[$argidx + 2]))[current_index] = ($DerefArgType)@derive_arg_value(
+                                        arg, $DerefArgType.typeid, $DerefArgType.typeid, $ArgType.typeid);
+
+                                    ++array_storage_indexes[(char)$shortname[0]];
+
+                                $default:
+                                    *($vaarg[$argidx + 2]) = ($SingleDerefArgType)@derive_arg_value(
+                                        arg, $SingleDerefArgType.typeid, $DerefArgType.typeid, $ArgType.typeid);
                             $endswitch
                     $endswitch
 
@@ -606,4 +655,59 @@ macro void? @parse(#args, ...)
             return ILLEGAL_OPTION?;
         }
     }
+}
+
+
+macro @derive_arg_value(String arg, $SingleDerefArgType, $DerefArgType, $ArgType) @local
+{
+    $switch ($SingleDerefArgType) :
+        $case int128.typeid :
+        $case long.typeid :
+        $case int.typeid :
+        $case short.typeid :
+        $case ichar.typeid :
+        $case uint128.typeid :
+        $case ulong.typeid :
+        $case uint.typeid :
+        $case ushort.typeid :
+            $DerefArgType? retval = arg.to_integer($DerefArgType);
+            if (catch oops = retval)
+            {
+                io::eprintf("Exception caught while parsing arg '%s' as NUMERIC type '%s': %s", arg, $DerefArgType.nameof, oops);
+
+                abort("Invalid option argument format for integer type '" +++ $SingleDerefArgType.nameof +++ "'.");
+            }
+            return retval;
+
+        $case char.typeid :
+            if (ascii::@is_digit(arg[0]))
+            {
+                $DerefArgType? retval = arg.to_integer($DerefArgType);
+                if (catch oops = retval)
+                {
+                    io::eprintf("Exception caught while parsing arg '%s' as CHAR type '%s': %s", arg, $DerefArgType.nameof, oops);
+
+                    abort("Invalid option argument format for char type '" +++ $SingleDerefArgType.nameof +++ "'.");
+                }
+                return retval;
+            }
+            else
+            {
+                if (arg.len != 1) abort("Alphabetic 'char' arguments must be only a single character.");
+
+                return arg[0];
+            }
+
+        $case float.typeid : return arg.to_float()!!;
+        $case double.typeid : return arg.to_double()!!;
+
+        $case String.typeid :
+        $case ZString.typeid :
+        $case WString.typeid :
+        $case (char*).typeid :
+            return ($SingleDerefArgType)arg;
+
+        $default:
+            $error "Type '" +++ $ArgType.nameof +++ "' could not be derived from a String argument.";
+    $endswitch
 }
