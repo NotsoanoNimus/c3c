@@ -521,11 +521,12 @@ macro @enable_errors() => err = 1;
 
 macro void? @parse(#args, ...)
 {
-    $assert ($vacount % 3) == 0 : `Options must be specified in triplets as "{letter}", "{longopt}", {store-ptr}.`;
+    $assert ($vacount % 3) == 0 : `Options must be specified in triplets as "[shortname]", "[longname]", {store-ptr}.`;
 
     // Used for sequentially filling array args for repeating options.
     //   256 of these because that's the width of one shortname, which is how the indices themselves are indexed.
     static ushort[256] array_storage_indexes;
+    var $dyn_shortname = { 0x80, 0 };   // dynamic shortname values start at 0x80 for longopts w/o shortopt chars
 
     // Set up a dynamically filled longopts.
     LongOption[($vacount / 3)] longopts;
@@ -540,65 +541,107 @@ macro void? @parse(#args, ...)
         var $shortname = $vaconst[$argidx];
         var $longname = $vaconst[$argidx + 1];
 
-        $assert $longname.len > 0 : "You must specify a long name to use for each option.";
-        $assert $shortname.len > 0 : "You must specify a short name to use for each option.";
+        $assert $longname.len > 0 ||| $shortname.len > 0
+            : "You must specify at least a short or a long name for each option.";
 
-        $assert ($shortname[0] >= 'a' &&& $shortname[0] <= 'z')
-            ||| ($shortname[0] <= 'A' &&& $shortname[0] >= 'Z')
-            ||| ($shortname[0] <= '0' &&& $shortname[0] >= '9')
-            ||| $shortname[0] == '-'
-                : `Short-name options should match the following regular expression: [a-zA-Z0-9\?-][\+\?]?`;
+        $if $shortname.len > 0 :
+            $assert ($shortname[0] >= 'a' &&& $shortname[0] <= 'z')
+                ||| ($shortname[0] <= 'A' &&& $shortname[0] >= 'Z')
+                ||| ($shortname[0] <= '0' &&& $shortname[0] >= '9')
+                ||| $shortname[0] == '-'
+                    : `Short-name options should match the following regular expression: [a-zA-Z0-9-][\+\?]?`;
 
-        $dyn_opt_str = $dyn_opt_str +++ $shortname[0];   // concat shortname onto dynamic option_str
+            $dyn_opt_str = $dyn_opt_str +++ $shortname[0];   // concat shortname onto dynamic option_str
+        $endif
+
+        // Before proceeding to the monolith below, make sure the person providing options isn't trying to be cheeky.
+        $if $longname.len > 0 &&& $shortname.len > 0 :
+            $if $longname[^1] == '+' ||| $longname[^1] == '?' :
+                $assert $shortname[^1] != '+' &&& $shortname[^1] != '?'
+                    : "You can't have argument type specifiers (? or +) on both the short and long option names.";
+            $endif
+
+            $if $shortname[^1] == '+' ||| $shortname[^1] == '?' :
+                $assert $longname[^1] != '+' &&& $longname[^1] != '?'
+                    : "You can't have argument type specifiers (? or +) on both the short and long option names.";
+            $endif
+        $endif
 
         // The third param MUST be a pointer/reference or function type.
-        $assert $typeof($vaarg[$argidx + 2]).kindof == TypeKind.POINTER || $typeof($vaarg[$argidx + 2]).kindof == TypeKind.FUNC
-            : "The parameter reference " +++ $typeof($vaarg[$argidx + 2]).nameof +++ " is not a pointer type.";
+        var $kind_of_arg = $typeof($vaarg[$argidx + 2]).kindof;
+        $assert $kind_of_arg == TypeKind.POINTER || $kind_of_arg == TypeKind.FUNC
+            : "The parameter reference " +++ $typeof($vaarg[$argidx + 2]).nameof +++ " is not a pointer or function type.";
 
         var $has_arg = OptionArgType.NO_ARGUMENT;   // default
 
         // Only 'bool*' types represent flags, which do not have arguments.
-        $if $typeof($vaarg[$argidx + 2]).kindof == TypeKind.FUNC ||| ! types::is_bool(($typeof($vaarg[$argidx + 2])).inner) :
+        $if $kind_of_arg == TypeKind.FUNC ||| ! types::is_bool(($typeof($vaarg[$argidx + 2])).inner) :
             $switch :
                 // Furthermore, for non-flags which have arguments, they might be optional.
-                $case $shortname.len >= 2 &&& $shortname[1] == '?' :
+                $case ($longname.len >= 2 &&& $longname[^1] == '?') ||| ($shortname.len >= 2 &&& $shortname[1] == '?') :
                     $has_arg = OptionArgType.OPTIONAL_ARGUMENT;
-                    $dyn_opt_str = $dyn_opt_str +++ "::";
+                    $if ($shortname.len > 0) :   // only append to the dynamic opt_str when a shortname is set explicitly
+                        $dyn_opt_str = $dyn_opt_str +++ "::";
+                    $endif
 
                 // ... or incremental. Incremental argument types do not accept arguments.
-                $case $shortname.len >= 2 &&& $shortname[1] == '+' :
+                $case ($longname.len >= 2 &&& $longname[^1] == '+') ||| ($shortname.len >= 2 &&& $shortname[1] == '+') :
                     $has_arg = OptionArgType.INCREMENTAL;
 
                     $assert ($typeof($vaarg[$argidx + 2]).nameof == (uint*).typeid.nameof)
-                        : "Incremental option '" +++ $shortname +++ "' must be of type 'uint*' (but got '"
-                            +++ $typeof($vaarg[$argidx + 2]).nameof +++ "' instead).";
+                        : "Incremental option '" +++ ($shortname.len > 0 ? $shortname : $longname) +++
+                            "' must be of type 'uint*' (but got '" +++ $typeof($vaarg[$argidx + 2]).nameof +++ "' instead).";
 
                 // ... or a callback. Callback types DO accept a string argument to pass to themselves.
-                $case $typeof($vaarg[$argidx + 2]).kindof == TypeKind.FUNC:
+                $case $kind_of_arg == TypeKind.FUNC :
                     $has_arg = OptionArgType.CALLBACK;
-                    $dyn_opt_str = $dyn_opt_str +++ ":";
+                    $if ($shortname.len > 0) :   // only append to the dynamic opt_str when a shortname is set explicitly
+                        $dyn_opt_str = $dyn_opt_str +++ ":";
+                    $endif
+                    // no $nextcase exists, or this would flow better
 
                 $default :
                     $has_arg = OptionArgType.REQUIRED_ARGUMENT;
-                    $dyn_opt_str = $dyn_opt_str +++ ":";
+                    $if ($shortname.len > 0) :   // only append to the dynamic opt_str when a shortname is set explicitly
+                        $dyn_opt_str = $dyn_opt_str +++ ":";
+                    $endif
             $endswitch
+        $endif
+
+        // But also track the runtime longopts details. This means removing INCREMENTAL and CALLBACK from the equation,
+        //   since they're not runtime argtype values according to getopts.
+        var $has_arg_runtime = $has_arg == OptionArgType.INCREMENTAL ? OptionArgType.NO_ARGUMENT
+            : ($has_arg == OptionArgType.CALLBACK ? OptionArgType.REQUIRED_ARGUMENT : $has_arg);
+
+        // Update 'longname' to remove possible suffix.
+        $if ($longname.len > 0) &&& ($longname[^1] == '?' ||| $longname[^1] == '+'):
+            $longname = $longname[..^2];
+        $endif
+
+        $if $shortname.len :
+            longopts[$argidx / 3] = { $longname, $has_arg_runtime, null, (int)($shortname[0]) };
+        $else
+            longopts[$argidx / 3] = { $longname, $has_arg_runtime, null, (int)($dyn_shortname[0]) };
+            ++$dyn_shortname[0];   // next dyn_shortname
         $endif
 
         // Track the arg type in CT variables.
         $ct_argstype[($argidx / 3)] = $has_arg;
         $ct_longnames[$argidx / 3] = $longname;
-        $ct_shortnames[$argidx / 3] = $shortname[0];
-
-        // But also track the runtime longopts details.
-        var $has_arg_runtime = $has_arg == OptionArgType.INCREMENTAL ? OptionArgType.NO_ARGUMENT
-            : ($has_arg == OptionArgType.CALLBACK ? OptionArgType.REQUIRED_ARGUMENT : $has_arg);
-
-        longopts[$argidx / 3] = { $longname, $has_arg_runtime, null, (int)($shortname[0]) };
+        $if $shortname.len > 0 :
+            $ct_shortnames[$argidx / 3] = $shortname[0];
+        $else
+            $ct_shortnames[$argidx / 3] = ($dyn_shortname[0] - 1);
+        $endif
 
         // Quickly check for duplicate short/long option names.
         $for var $a = 0; $a < ($argidx / 3); ++$a :
-            $assert $ct_longnames[$a] != $longname : "Duplicate long option name '" +++ $longname +++ "' is not allowed.";
-            $assert $ct_shortnames[$a] != $shortname[0] : "Duplicate short option character '" +++ $shortname[0] +++ "' is not allowed.";
+            $assert !$ct_longnames[$a].len ||| ($ct_longnames[$a] != $longname)
+                : "Duplicate long option name '" +++ $ct_longnames[$a] +++ "' is not allowed.";
+
+            // $assert ($ct_shortnames[$a] == ($dyn_shortname[0] - 1)) ||| ($ct_shortnames[$a] != $shortname[0])
+            $assert ($ct_shortnames[$a] != $ct_shortnames[$argidx / 3])
+                : "Duplicate short option character '" +++ $ct_shortnames[$a] +++ "' is not allowed.";
         $endfor
     $endfor
 
@@ -616,11 +659,10 @@ macro void? @parse(#args, ...)
             if (':' == optval) return ILLEGAL_OPTION?;
 
             $for var $argidx = 0; $argidx < $vacount; $argidx += 3 :
-                // Redefine these...
-                var $shortname = $vaconst[$argidx];
-                var $longname = $vaconst[$argidx + 1];
+                var $shortname = $ct_shortnames[$argidx / 3]; //$vaconst[$argidx];
+                var $longname = $ct_longnames[$argidx / 3]; //$vaconst[$argidx + 1];
 
-                if ((int)($shortname[0]) == optval)
+                if ((int)($shortname) == optval)
                 {
                     // An option handler should never be considered valid if the longopt_index exceeds the size of the longopts slice.
                     if (longopt_index >= longopts.len) return INVALID_LONGOPT?;
@@ -679,14 +721,14 @@ macro void? @parse(#args, ...)
                                         $DerefArgType = $DerefArgType.inner;
                                     $endfor
 
-                                    ushort current_index = array_storage_indexes[(char)$shortname[0]];
+                                    ushort current_index = array_storage_indexes[(char)$shortname];
 
                                     if (current_index >= (*($vaarg[$argidx + 2])).len) return OUT_OF_BOUNDS?;
 
                                     (*($vaarg[$argidx + 2]))[current_index] = ($DerefArgType)@derive_arg_value(
                                         arg, $DerefArgType.typeid, $DerefArgType.typeid, $ArgType.typeid);
 
-                                    ++array_storage_indexes[(char)$shortname[0]];
+                                    ++array_storage_indexes[(char)$shortname];
 
                                 $default:
                                     *($vaarg[$argidx + 2]) = ($SingleDerefArgType)@derive_arg_value(

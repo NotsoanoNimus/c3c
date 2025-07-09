@@ -22,6 +22,8 @@ struct TestResult (Printable)
     char[3] golf;
     String[3] hotel;
     char india;
+    int128 juliet;
+    bool has_kilo;
 }
 
 TestResult t;
@@ -46,8 +48,8 @@ fn bool TestResult.eq(&self, TestResult other) @operator(==)
 
 fn usz? TestResult.to_format(&self, Formatter* f) @dynamic
     => f.printf(
-        "[A(%s) B(%s) C(%s) D(%s) E(%s) F(%s) G(%s) H(%s) I(%s)]",
-        self.has_alpha, self.has_bravo, self.charlie, self.delta, self.echo, self.fox, self.golf, self.hotel, self.india
+        "[A(%s) B(%s) C(%s) D(%s) E(%s) F(%s) G(%s) H(%s) I(%s) J(%s) K(%s)]",
+        self.has_alpha, self.has_bravo, self.charlie, self.delta, self.echo, self.fox, self.golf, self.hotel, self.india, self.juliet, self.has_kilo
     )!;
 
 
@@ -59,7 +61,7 @@ fn void fresh()
 }
 
 
-const OPTION_STR = "abc:d:e::fg:h:i:";
+const OPTION_STR = "abc:d:e::fg:h:i:k";   // notice no 'juliet' here
 
 const LongOption[] LONGOPTS = {
     { "alpha",      NO_ARGUMENT,        null,   'a' },
@@ -71,6 +73,8 @@ const LongOption[] LONGOPTS = {
     { "golf",       REQUIRED_ARGUMENT,  null,   'g' },
     { "hotel",      REQUIRED_ARGUMENT,  null,   'h' },
     { "india",      REQUIRED_ARGUMENT,  null,   'i' },
+    { "juliet",     REQUIRED_ARGUMENT,  null,   'x' },   // ... but juliet is indicated by 'x'
+    // notice no 'kilo' here -- short opt only
 };
 
 
@@ -82,10 +86,12 @@ fn void? parse_test(String[] args) =>
         "c" ,   "charlie",  &t.charlie,
         "d" ,   "delta",    &t.delta,
         "e?",   "echo",     &t.echo,
-        "f+",   "fox",      &t.fox,
+        "f" ,   "fox+",     &t.fox,
         "g" ,   "golf",     &t.golf,
         "h" ,   "hotel",    &t.hotel,
         "i" ,   "india",    &get_india_value,
+        ""  ,   "juliet",   &t.juliet,   // empty shortopt
+        "k"  ,  "",         &t.has_kilo,   // empty longopt
     )!;
 
 fn void? getopt_test(String[] args)
@@ -148,6 +154,14 @@ fn void? common_switch(int retval) @local
             {
                 return opt::MISSING_ARGUMENT?;
             }
+
+        case 'x':   // juliet
+            t.juliet = opt::arg.to_integer(int128.typeid)!;
+            io::printn("(juliet)");
+
+        case 'k':
+            t.has_kilo = true;
+            io::printn("(kilo)");
     }
 }
 
@@ -214,18 +228,18 @@ macro void? @run(CallType $test_type, #args, #expected) @local
 
 fn void sanity_check_result_comparisons()
 {
-    TestResult left = { true, true, 123, 0.012312, "zstr", 90, {'a', 'x', 'd' }, { "str", "123", "xyz" }, 'w' };
+    TestResult left = { true, true, 123, 0.012312, "zstr", 90, {'a', 'x', 'd' }, { "str", "123", "xyz" }, 'w', 123412341234123412341234, true };
 
-    TestResult right = { true, true, 123, 0.012312, "zstr", 90, {'a', 'x', 'd' }, { "str", "___", "xyz" }, 'w' };
+    TestResult right = { true, true, 123, 0.012312, "zstr", 90, {'a', 'x', 'd' }, { "str", "___", "xyz" }, 'w', 123412341234123412341234, true };
     test::@check(left != right);
 
-    right = { true, true, 123, 0.012312, "zstr", 90, {'a', 'x', 'd' }, { "str", "123", "xyz" }, 'w' };
+    right = { true, true, 123, 0.012312, "zstr", 90, {'a', 'x', 'd' }, { "str", "123", "xyz" }, 'w', 123412341234123412341234, true };
     test::@check(left == right);
 
-    right = { true, false, 123, 0.012312, "zstr", 90, {'a', 'x', 'd' }, { "str", "123", "xyz" }, 'w' };
+    right = { true, false, 123, 0.012312, "zstr", 90, {'a', 'x', 'd' }, { "str", "123", "xyz" }, 'w', 123412341234123412341234, true };
     test::@check(left != right);
 
-    right = { true, true, 123, 0.012312, "a zstr", 90, {'a', 'x', 'd' }, { "str", "123", "xyz" }, 'w' };
+    right = { true, true, 123, 0.012312, "a zstr", 90, {'a', 'x', 'd' }, { "str", "123", "xyz" }, 'w', 123412341234123412341234, true };
     test::@check(left != right);
 }
 
@@ -239,33 +253,19 @@ fn void simple_all()
 
     @run_each({ "-d0.7", "-gg", "-go", "-i", "werp" }, { .delta = 0.7, .golf = { 'g', 'o', 0 }, .india = 'r' })!!;
 
-    // NOTE: --delta=0.74 still doesn't work...
     @run_each_has_long(
         { "-abc123", "--delta=0.74", "-e", "--fox", "--", "nonopt" },
         { .has_alpha = true, .has_bravo = true, .charlie = 123, .delta = 0.74, .fox = 1 }
     )!!;
 
-    // Note for later: adding one extra eleemnt onto the front of this causes a compiler OOM. Investigate later. Splat issue??
+    @run_each_has_long({ `--echo=all by myself` }, { .echo = `all by myself` })!!;
+    @run_each_has_long({ `-e'all by myself'` }, { .echo = `'all by myself'` })!!;
+    @run_each_has_long({ `-be`, `all by myself` }, { .has_bravo = true, .echo = {} })!!;   // spaces after optionals do not apply the optional arg
+
     @run_each_has_long(
-        // { "-esomething", "-fff", "-h", "aaa", "--fox", "-ad0.4", "--hotel", "beauty how it works innit" },
         { "-esomething", "-fff", "-haaa", "--fox", "-ad0.4", "--hotel", "beauty how it works innit" },
         { .has_alpha = true, .delta = 0.4, .echo = "something", .fox = 4, .hotel = { "aaa", "beauty how it works innit", "" } }
     )!!;
-}
-
-
-fn void simple_mix()
-{
-    //
-}
-
-
-fn void simple_failures()
-{
-    // Missing arguments.
-    // @run(SHORT, { "-a", "-c", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
-    // @run(SHORT, { "-ac", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
-    // @run(SHORT, { "-bc", "888" }, { .has_alpha = false, .has_bravo = true, .charlie = 888 })!!;
 }
 
 
@@ -282,9 +282,13 @@ fn void different_prefix()
     @run_each({ "/d0.7", "/gg", "/go", "/i", "werp" }, { .delta = 0.7, .golf = { 'g', 'o', 0 }, .india = 'r' })!!;
 
     @run_each_has_long(
-        { "/abc123", "//delta", "0.74", "/e", "//fox", "//", "nonopt" },
+        { "/abc123", "//delta=0.74", "/e", "//fox", "//", "nonopt" },
         { .has_alpha = true, .has_bravo = true, .charlie = 123, .delta = 0.74, .fox = 1 }
     )!!;
+
+    @run_each_has_long({ `//echo=all by myself` }, { .echo = `all by myself` })!!;
+    @run_each_has_long({ `/e'all by myself'` }, { .echo = `'all by myself'` })!!;
+    @run_each_has_long({ `/be`, `all by myself` }, { .has_bravo = true, .echo = {} })!!;   // spaces after optionals do not apply the optional arg
 
     @run_each_has_long(
         { "/esomething", "/fff", "/haaa", "//fox", "/ad0.4", "//hotel", "beauty how it works innit" },
@@ -302,4 +306,27 @@ fn void callbacks()
 
     @run_each_has_long({ "--india", "xyzabc" }, { .india = 'z' })!!;
     @run_each_has_long({ "-c3", "--india", "xyzabc" }, { .charlie = 3, .india = 'z' })!!;
+}
+
+
+fn void exclusive_short_long_opts()
+{
+    @run_each_has_long({ "-ab", "--juliet=500" }, { .has_alpha = true, .has_bravo = true, .juliet = 500 })!!;
+    @run_each({ "-abk" }, { .has_alpha = true, .has_bravo = true, .has_kilo = true })!!;
+
+    // Ensure long/short options which aren't supposed to be there... aren't.
+    // TODO: Need a 'run_each' w/ should_error=true
+    // @run_each({ "-ab", "-j5" }, { .has_alpha = true, .has_bravo = true, .juliet = 0 })!!;
+    // @run_each_has_long({ "-ab", "--kilo" }, { .has_alpha = true, .has_bravo = true, .has_kilo = false })!!;
+
+    @run(LONG, { "--alpha", "--juliet", "17000" }, { .has_alpha = true, .juliet = 17000 })!!;
+}
+
+
+fn void simple_failures()
+{
+    // Missing arguments.
+    // @run(SHORT, { "-a", "-c", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
+    // @run(SHORT, { "-ac", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
+    // @run(SHORT, { "-bc", "888" }, { .has_alpha = false, .has_bravo = true, .charlie = 888 })!!;
 }
