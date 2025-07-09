@@ -753,9 +753,18 @@ macro @derive_arg_value(String arg, $SingleDerefArgType, $DerefArgType, $ArgType
 
         $case String.typeid :
         $case ZString.typeid :
-        $case WString.typeid :
         $case (char*).typeid :
             return ($SingleDerefArgType)arg;
+
+        $case WString.typeid :
+            WString? retval = arg.to_wstring();
+            if (catch oops = retval)
+            {
+                    io::eprintf("Exception caught while converting argument to WString: %s", oops);
+
+                    abort("Unable to convert argument to a wide string.");
+            }
+            return retval;
 
         $default:
             $error "Type '" +++ $ArgType.nameof +++ "' could not be derived from a String argument.";
