@@ -26,6 +26,11 @@ import std::math;
 const BAD_CHAR = '?';
 const BAD_ARG = ':';
 
+const int NO_PREFIX @local = -1;
+const int D_PREFIX @local = 0;
+const int DD_PREFIX @local = 1;
+const int W_PREFIX @local = 2;
+
 const char[1] PLACEHOLDER @local = {0};   // used to mark an empty 'place' value
 
 
@@ -77,29 +82,19 @@ int dash_prefix @local = -1;
 
 fn void permute_args(int panonopt_start, int panonopt_end, int opt_end, String[] args) @local
 {
-    int cstart, cyclelen, i, j, ncycle, nnonopts, nopts, pos;
-    String swap;
+    int nnonopts = panonopt_end - panonopt_start;
+    int nopts = opt_end - panonopt_end;
+    int ncycle = math::gcd(nnonopts, nopts);
+    int cyclelen = (opt_end - panonopt_start) / ncycle;
 
-    nnonopts = panonopt_end - panonopt_start;
-    nopts = opt_end - panonopt_end;
-    ncycle = math::gcd(nnonopts, nopts);
-    cyclelen = (opt_end - panonopt_start) / ncycle;
-
-    for (i = 0; i < ncycle; ++i)
+    for (int i = 0; i < ncycle; ++i)
     {
-        cstart = panonopt_end + i;
-        pos = cstart;
+        int cstart = panonopt_end + i;
+        int pos = cstart;
 
-        for (j = 0; j < cyclelen; ++j)
+        for (int j = 0; j < cyclelen; ++j)
         {
-            if (pos >= panonopt_end)
-            {
-                pos -= nnonopts;
-            }
-            else
-            {
-                pos += nopts;
-            }
+            pos = (pos >= panonopt_end) ? (pos - nnonopts) : (pos + nopts);
 
             @swap(args[pos], args[cstart]);
         }
@@ -113,16 +108,15 @@ fn int parse_long_options(
 {
     char* current_dash;
     usz current_argv_len;
-    int i;
 
     ZString has_equal;
     ZString current_argv = (ZString)place;
 
     switch (dash_prefix)
     {
-        case 0: current_dash = "-";
-        case 1: current_dash = "--";
-        case 2: current_dash = "-W ";
+        case D_PREFIX: current_dash = "-";
+        case DD_PREFIX: current_dash = "--";
+        case W_PREFIX: current_dash = "-W ";
         default: current_dash = "";
     }
 
@@ -135,7 +129,7 @@ fn int parse_long_options(
     if (null != (has_equal = (ZString)libc::strchr(current_argv, '=')))
     {
         // argument found (--option=arg)
-        current_argv_len = has_equal.len() - current_argv.len();
+        current_argv_len = (uptr)has_equal - (uptr)current_argv;
         ++has_equal;
     }
     else
@@ -143,7 +137,7 @@ fn int parse_long_options(
         current_argv_len = current_argv.len();
     }
 
-    for (i = 0; options[i].name; ++i)
+    for (int i = 0; i < options.len && options[i].name; ++i)   // note: 'len' allows us to remove 'sentinel' (null) longopts
     {
         /* find matching long option */
         if (current_argv != options[i].name) continue;
@@ -176,7 +170,7 @@ fn int parse_long_options(
     if (!exact_match && second_partial_match)
     {
         /* ambiguous abbreviation */
-        if (err) io::eprintf("getopt: ambiguous option -- %s\n", current_argv);
+        if (err) io::eprintf("getopt: ambiguous option -- (%s) %s\n", current_dash, current_argv);
 
         opt = 0;
         return BAD_CHAR;
@@ -186,7 +180,7 @@ fn int parse_long_options(
     {
         if (options[match].has_arg == OptionArgType.NO_ARGUMENT && has_equal)
         {
-            if (err) io::eprintf("getopt: option doesn't take an argument -- %s\n", current_argv);
+            if (err) io::eprintf("getopt: option doesn't take an argument -- (%s) %s\n", current_dash, current_argv);
 
             // GNU sets 'opt' to 'val' regardless of flag.
             if (options[match].flag == null)
@@ -219,7 +213,7 @@ fn int parse_long_options(
         if (options[match].has_arg == OptionArgType.REQUIRED_ARGUMENT && (arg.ptr == null || !arg.len))
         {
             // Missing argument; leading ':' indicates no error should be generated.
-            if (err) io::eprintf("option requires an argument -- %s\n", current_argv);
+            if (err) io::eprintf("getopt: option requires an argument -- (%s) %s\n", current_dash, current_argv);
 
             // GNU sets opt to val regardless of flag
             if (options[match].flag == null)
@@ -243,7 +237,7 @@ fn int parse_long_options(
             return -1;
         }
 
-        if (err) io::eprintf("unknown option -- %s\n", current_argv);
+        if (err) io::eprintf("getopt: unknown option -- (%s) %s\n", current_dash, current_argv);
 
         opt = 0;
         return BAD_CHAR;
@@ -268,8 +262,7 @@ fn int getopt_internal(
     String[] args, ZString option_str, LongOption[] options, int* options_index, GetoptFlags flags
 ) @local
 {
-    // NOTE: This translation of getopt_internal assumes POSIXLY_CORRECT == true; therefore, all occurrences
-    //   of the variable have been amended with 'true'.
+    // NOTE: This translation explicitly prefers the GNU extensions to getopt and cuts out any #else blocks.
     char* option_letter_list_index;
     int optchar, short_too;
 
@@ -279,7 +272,7 @@ fn int getopt_internal(
     {
         flags.all_args = true;
     }
-    else if (true || option_str[0] == '+')
+    else if (option_str[0] == '+')
     {
         flags.permute = false;
     }
@@ -291,95 +284,94 @@ fn int getopt_internal(
 
     if (reset) nonopt_start = nonopt_end = -1;
 
-    while START: (true)
+    while START: (true)   // set 'start:' label
     {
-        if (reset || !*place)
+        if (!reset && *place) break START;
+
+        reset = 0;
+
+        if (ind >= args.len)
         {
-            reset = 0;
+            place = &PLACEHOLDER[0];
 
-            if (ind >= args.len)
+            if (nonopt_end != -1)
             {
-                place = &PLACEHOLDER[0];
+                permute_args(nonopt_start, nonopt_end, ind, args);
 
-                if (nonopt_end != -1)
-                {
-                    permute_args(nonopt_start, nonopt_end, ind, args);
-
-                    ind -= (nonopt_end - nonopt_start);
-                }
-                else if (nonopt_start != -1)
-                {
-                    ind = nonopt_start;
-                }
-
-                nonopt_start = nonopt_end = -1;
-                return -1;
+                ind -= (nonopt_end - nonopt_start);
+            }
+            else if (nonopt_start != -1)
+            {
+                ind = nonopt_start;
             }
 
-            place = args[ind].ptr;
+            nonopt_start = nonopt_end = -1;
+            return -1;
+        }
 
-            if (place[0] != '-' || (((ZString)place).len() > 1 && !place[1] && null == libc::strchr(option_str, '-')))
+        place = args[ind].ptr;
+
+        if (place[0] != '-' || (((ZString)place).len() >= 2 && !place[1]))
+        {
+            // found a non-option...
+            place = &PLACEHOLDER[0];
+
+            if (flags.all_args)
             {
-                // found a non-option...
-                place = &PLACEHOLDER[0];
-
-                if (flags.all_args)
-                {
-                    arg = args[ind++];
-                    return 1;   // INORDER
-                }
-
-                if (!flags.permute) return -1;   // when no permutation wanted, stop parsing at first non-option
-
-                // do permutation
-                if (nonopt_start == -1)
-                {
-                    nonopt_start = ind;
-                }
-                else if (nonopt_end != -1)
-                {
-                    permute_args(nonopt_start, nonopt_end, ind, args);
-
-                    nonopt_start = ind - (nonopt_end - nonopt_start);
-                    nonopt_end = -1;
-                }
-
-                ++ind;
-                continue START;   // goto START - process next argument
+                arg = args[ind++];
+                return 1;   // INORDER: GNU extension returning non-options as opt::arg on opt::opt/retval '1'.
             }
 
-            if (nonopt_start != -1 && nonopt_end == -1) nonopt_end = ind;
+            if (!flags.permute) return -1;   // when no permutation wanted, stop parsing at first non-option
 
-            // if there's a '-' here, '--' means this processing is finished
-            if (((ZString)place).len() > 1 && place[1] && *++place == '-' && !place[1])
+            // do permutation
+            if (nonopt_start == -1)
             {
-                ++ind;
-                place = &PLACEHOLDER[0];
-
-                // found an option, so if skipped non-options, then permute
-                if (nonopt_end != -1)
-                {
-                    permute_args(nonopt_start, nonopt_end, ind, args);
-                    ind -= nonopt_end - nonopt_start;
-                }
-
-                nonopt_start = nonopt_end = -1;
-                return -1;
+                nonopt_start = ind;
             }
+            else if (nonopt_end != -1)
+            {
+                permute_args(nonopt_start, nonopt_end, ind, args);
+
+                nonopt_start = ind - (nonopt_end - nonopt_start);
+                nonopt_end = -1;
+            }
+
+            ++ind;
+            continue START;   // goto START - process next argument
+        }
+
+        if (nonopt_start != -1 && nonopt_end == -1) nonopt_end = ind;
+
+        // if there's a '-' here, do nothing. '--' means this processing is finished
+        if (((ZString)place).len() > 1 && place[1] && *++place == '-' && !place[1])
+        {
+            ++ind;
+            place = &PLACEHOLDER[0];
+
+            // found an option, so if skipped non-options, then permute
+            if (nonopt_end != -1)
+            {
+                permute_args(nonopt_start, nonopt_end, ind, args);
+                ind -= nonopt_end - nonopt_start;
+            }
+
+            nonopt_start = nonopt_end = -1;
+            return -1;
         }
 
         break START;
     }
 
-    if (options.len > 0 && place != args[ind] && (*place == '-' || flags.long_only))
+    if (options.len > 0 && place != args[ind].ptr && (*place == '-' || flags.long_only))
     {
         short_too = 0;
-        dash_prefix = 0;
+        dash_prefix = D_PREFIX;
 
         if (*place == '-')
         {
             ++place;
-            dash_prefix = 1;
+            dash_prefix = DD_PREFIX;
         }
         else if (*place != ':' && null != libc::strchr(option_str, *place))
         {
@@ -394,6 +386,8 @@ fn int getopt_internal(
         }
     }
 
+    // If the user specified '-' and '-' isn't in options, return -1 per POSIX.
+    //   Else, it is an unknown option.
     if ((optchar = (int)*place++) == (int)':'
         || (optchar == (int)'-' && *place)
         || null == (option_letter_list_index = libc::strchr(option_str, optchar))
@@ -402,15 +396,16 @@ fn int getopt_internal(
 
         if (!*place) ++ind;
 
-        if (err) io::eprintf("getopt: invalid option -- %c\n", optchar);
+        if (err) io::eprintf("getopt: invalid option -- (%d) %c\n", dash_prefix, optchar);
 
         opt = optchar;
         return BAD_CHAR;
     }
 
+    // -W long option (barf)
     if (options.len > 0 && optchar == 'W' && option_letter_list_index[1] == ';')
     {
-        if (*place)
+        if (*place)   // no space
         {
             asm { nop; }   // do nothing
         }
@@ -418,7 +413,7 @@ fn int getopt_internal(
         {
             place = &PLACEHOLDER[0];
 
-            if (err) io::eprintf("getopt: option requires an argument -- %c\n", optchar);
+            if (err) io::eprintf("getopt: option requires an argument -- (%d) %c\n", dash_prefix, optchar);
 
             opt = optchar;
             return BAD_ARG;
@@ -428,7 +423,7 @@ fn int getopt_internal(
             place = args[ind];
         }
 
-        dash_prefix = 2;
+        dash_prefix = W_PREFIX;
 
         optchar = parse_long_options(args, option_str, options, options_index, 0, flags);
         place = &PLACEHOLDER[0];
@@ -436,25 +431,25 @@ fn int getopt_internal(
         return optchar;
     }
 
-    if (*++option_letter_list_index != ':')
+    if (*++option_letter_list_index != ':')   // doesn't take arg
     {
         if (!*place) ++ind;
     }
-    else
+    else   // takes an optional arg
     {
         arg = {};
 
-        if (*place)
+        if (*place)   // no space! (optional arguments DO NOT USE A SPACE)
         {
             arg = ((ZString)place).str_view();
         }
-        else if (option_letter_list_index[1] != ':')
+        else if (option_letter_list_index[1] != ':')   // arg not optional
         {
             if (++ind >= args.len)
             {
                 place = &PLACEHOLDER[0];
 
-                if (err) io::eprintf("getopt: option requires an argument -- %c\n", optchar);
+                if (err) io::eprintf("getopt: option requires an argument -- (%d) %c\n", dash_prefix, optchar);
 
                 opt = optchar;
                 return BAD_ARG;
@@ -496,9 +491,17 @@ faultdef
 
 
 <*
-Reset static option index to 1 (past first implicit arg) and static option reset to 1 (i.e., 'true').
+Reset all 'static' option state values to their initial states.
 *>
-macro @reset() => reset = ind = 1;
+macro @reset()
+{
+    err = ind = 1;
+    opt = reset = 0;
+    arg = {};
+    place = &PLACEHOLDER[0];
+
+    nonopt_start = nonopt_end = dash_prefix = -1;
+}
 
 
 <*
@@ -593,8 +596,7 @@ macro void? @parse(#args, ...)
         $endfor
     $endfor
 
-    longopts[^1] = {};   // always ends with an explicit empty LongOption (aka, "sentinel" value)
-    opt::reset = 1;   // reset getopt_long/getopt
+    opt::@reset();
 
     // This macro wraps a `getopt_long` call.
     int longopt_index;
@@ -613,8 +615,8 @@ macro void? @parse(#args, ...)
 
                 if ((int)($shortname[0]) == optval)
                 {
-                    // An option handler should never be considered valid if the longopt_index exceeds the size of (longopts - [sentinel]).
-                    if (longopt_index >= longopts.len - 1) return INVALID_LONGOPT?;
+                    // An option handler should never be considered valid if the longopt_index exceeds the size of the longopts slice.
+                    if (longopt_index >= longopts.len) return INVALID_LONGOPT?;
 
                     // Now set the option handler's behavior based on the type of argument (if any) that's expected.
                     $switch ($ct_argstype[($argidx / 3)]) :
