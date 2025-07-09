@@ -144,7 +144,7 @@ fn int parse_long_options(
     for (int i = 0; i < options.len && options[i].name; ++i)   // note: 'len' allows us to remove 'sentinel' (null) longopts
     {
         /* find matching long option */
-        if (current_argv != options[i].name) continue;
+        if (current_argv.str_view()[:current_argv_len] != options[i].name.str_view()) continue;
 
         if (options[i].name.len() == current_argv_len)
         {
