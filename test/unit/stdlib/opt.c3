@@ -125,14 +125,14 @@ fn void? common_switch(int retval) @local
         case 'f': ++t.fox; io::printn("(fox)");
 
         case 'g':
-            io::printn("(golf)");
+            io::printf("(golf:%d)\n", golf_index);
             if (golf_index >= t.golf.len) return opt::OUT_OF_BOUNDS?;
             if (opt::arg.len == 0 || !opt::arg.ptr) return opt::MISSING_ARGUMENT?;
             t.golf[golf_index] = opt::arg[0];
             ++golf_index;
 
         case 'h':
-            io::printn("(hotel)");
+            io::printf("(hotel:%d)\n", hotel_index);
             if (hotel_index >= t.hotel.len) return opt::OUT_OF_BOUNDS?;
             if (opt::arg.len == 0 || !opt::arg.ptr) return opt::MISSING_ARGUMENT?;
             t.hotel[hotel_index] = opt::arg;
@@ -236,12 +236,29 @@ fn void simple_all()
     @run_each({ "-a", "-c", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
     @run_each({ "-ac", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
     @run_each({ "-bc", "888" }, { .has_alpha = false, .has_bravo = true, .charlie = 888 })!!;
+
+    @run_each({ "-d0.7", "-gg", "-go", "-i", "werp" }, { .delta = 0.7, .golf = { 'g', 'o', 0 }, .india = 'r' })!!;
+
+    // NOTE: --delta=0.74 still doesn't work...
+    @run_each_has_long(
+        { "-abc123", "--delta", "0.74", "-e", "--fox", "--", "nonopt" },
+        { .has_alpha = true, .has_bravo = true, .charlie = 123, .delta = 0.74, .fox = 1 }
+    )!!;
+
+    // Note for later: adding one extra eleemnt onto the front of this causes a compiler OOM. Investigate later. Splat issue??
+    @run_each_has_long(
+        // { "-esomething", "-fff", "-h", "aaa", "--fox", "-ad0.4", "--hotel", "beauty how it works innit" },
+        { "-esomething", "-fff", "-haaa", "--fox", "-ad0.4", "--hotel", "beauty how it works innit" },
+        { .has_alpha = true, .delta = 0.4, .echo = "something", .fox = 4, .hotel = { "aaa", "beauty how it works innit", "" } }
+    )!!;
 }
+
 
 fn void simple_mix()
 {
     //
 }
+
 
 fn void simple_failures()
 {
@@ -249,6 +266,32 @@ fn void simple_failures()
     // @run(SHORT, { "-a", "-c", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
     // @run(SHORT, { "-ac", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
     // @run(SHORT, { "-bc", "888" }, { .has_alpha = false, .has_bravo = true, .charlie = 888 })!!;
+}
+
+
+// Literally just/ `simple_all` w/ a different prefix
+fn void different_prefix()
+{
+    opt::prefix = '/';
+
+    @run_each({ "/b" }, { .has_bravo = true })!!;
+    @run_each({ "/a", "/c", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
+    @run_each({ "/ac", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
+    @run_each({ "/bc", "888" }, { .has_alpha = false, .has_bravo = true, .charlie = 888 })!!;
+
+    @run_each({ "/d0.7", "/gg", "/go", "/i", "werp" }, { .delta = 0.7, .golf = { 'g', 'o', 0 }, .india = 'r' })!!;
+
+    @run_each_has_long(
+        { "/abc123", "//delta", "0.74", "/e", "//fox", "//", "nonopt" },
+        { .has_alpha = true, .has_bravo = true, .charlie = 123, .delta = 0.74, .fox = 1 }
+    )!!;
+
+    @run_each_has_long(
+        { "/esomething", "/fff", "/haaa", "//fox", "/ad0.4", "//hotel", "beauty how it works innit" },
+        { .has_alpha = true, .delta = 0.4, .echo = "something", .fox = 4, .hotel = { "aaa", "beauty how it works innit", "" } }
+    )!!;
+
+    opt::prefix = opt::DEFAULT_PREFIX;   // set it back
 }
 
 

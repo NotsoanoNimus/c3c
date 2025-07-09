@@ -26,6 +26,8 @@ import std::math;
 const BAD_CHAR = '?';
 const BAD_ARG = ':';
 
+const DEFAULT_PREFIX = '-';
+
 const int NO_PREFIX @local = -1;
 const int D_PREFIX @local = 0;
 const int DD_PREFIX @local = 1;
@@ -65,11 +67,13 @@ bitstruct GetoptFlags : char @local
 
 
 // While these are old and crusty, it helps C developers to be able to use familiar constructs almost 1-to-1.
-int err = 1;   /* whether to print an error message */
-int ind = 1;   /* index into 'args' slice */
-int opt;   /* character checked for validity */
-int reset;   /* reset getopt scanning pointer */
-String arg;   /* argument string associated with option */
+int err = 1;   // whether to print an error message
+int ind = 1;   // index into 'args' slice
+int opt;   // character checked for validity
+int reset;   // reset getopt scanning pointer
+String arg;   // argument string associated with option
+
+char prefix = DEFAULT_PREFIX;
 
 
 // Module-local static variables.
@@ -268,7 +272,7 @@ fn int getopt_internal(
 
     if (!option_str || !option_str[0]) return -1;
 
-    if (option_str[0] == '-')
+    if (option_str[0] == '-')   // note: '-' here is NOT the default-prefix value
     {
         flags.all_args = true;
     }
@@ -311,7 +315,7 @@ fn int getopt_internal(
 
         place = args[ind].ptr;
 
-        if (place[0] != '-' || (((ZString)place).len() >= 2 && !place[1]))
+        if (place[0] != prefix || (((ZString)place).len() >= 2 && !place[1]))
         {
             // found a non-option...
             place = &PLACEHOLDER[0];
@@ -344,7 +348,7 @@ fn int getopt_internal(
         if (nonopt_start != -1 && nonopt_end == -1) nonopt_end = ind;
 
         // if there's a '-' here, do nothing. '--' means this processing is finished
-        if (((ZString)place).len() > 1 && place[1] && *++place == '-' && !place[1])
+        if (((ZString)place).len() > 1 && place[1] && *++place == prefix && !place[1])
         {
             ++ind;
             place = &PLACEHOLDER[0];
@@ -363,12 +367,12 @@ fn int getopt_internal(
         break START;
     }
 
-    if (options.len > 0 && place != args[ind].ptr && (*place == '-' || flags.long_only))
+    if (options.len > 0 && place != args[ind].ptr && (*place == prefix || flags.long_only))
     {
         short_too = 0;
         dash_prefix = D_PREFIX;
 
-        if (*place == '-')
+        if (*place == prefix)
         {
             ++place;
             dash_prefix = DD_PREFIX;
@@ -491,7 +495,7 @@ faultdef
 
 
 <*
-Reset all 'static' option state values to their initial states.
+Reset all 'static' option state values to their initial states. Does not reset the option prefix.
 *>
 macro @reset()
 {
@@ -598,6 +602,7 @@ macro void? @parse(#args, ...)
         $endfor
     $endfor
 
+    // Reset any previous options parsing that might have been done.
     opt::@reset();
 
     // This macro wraps a `getopt_long` call.
@@ -657,18 +662,12 @@ macro void? @parse(#args, ...)
                             $endfor
 
                             $switch ($DerefArgType.kindof) :
-                                $case TypeKind.VOID :
-                                    $error "Cannot assign parameter values to void values or void pointers.";
-                                $case TypeKind.POINTER :
-                                    $error "Cannot assign parameter values to pointers.";
-                                $case TypeKind.FUNC :
-                                    $error "Cannot assign parameter values to functions or function pointers.";
-                                $case TypeKind.OPTIONAL :
-                                    $error "Cannot assign parameter values to optionals.";
-                                $case TypeKind.TYPEID :
-                                    $error "Cannot assign parameter values to typeid values.";
-                                $case TypeKind.SLICE :
-                                    $error "Cannot assign parameter values to slices; use an array with a fixed length instead.";
+                                $case TypeKind.VOID :       $error "Cannot assign parameter values to void values or void pointers.";
+                                $case TypeKind.POINTER :    $error "Cannot assign parameter values to pointers.";
+                                $case TypeKind.FUNC :       $error "Cannot assign parameter values to functions or function pointers.";
+                                $case TypeKind.OPTIONAL :   $error "Cannot assign parameter values to optionals.";
+                                $case TypeKind.TYPEID :     $error "Cannot assign parameter values to typeid values.";
+                                $case TypeKind.SLICE :      $error "Cannot assign parameter values to slices; use an array with a fixed length instead.";
 
                                 $case TypeKind.ARRAY :
                                     // Disgusting. Re-evaluate the types, but this time without an array wrapping.
@@ -703,6 +702,9 @@ macro void? @parse(#args, ...)
             return ILLEGAL_OPTION?;
         }
     }
+
+    // Reset indexes.
+    array_storage_indexes = {};
 }
 
 
