@@ -183,20 +183,23 @@ enum CallType : const inline int @local
 }
 
 
-macro void? @run_each(#args, #expected) @local
+faultdef NON_FAULT;
+
+
+macro void? @run_each(#args, #expected, fault expected_fault = NON_FAULT) @local
 {
-    @run(SHORT, #args, #expected)!;
-    @run(LONG,  #args, #expected)!;
-    @run(PARSE, #args, #expected)!;
+    @run(SHORT, #args, #expected, expected_fault)!;
+    @run(LONG,  #args, #expected, expected_fault)!;
+    @run(PARSE, #args, #expected, expected_fault)!;
 }
 
-macro void? @run_each_has_long(#args, #expected) @local
+macro void? @run_each_has_long(#args, #expected, fault expected_fault = NON_FAULT) @local
 {
-    @run(LONG,  #args, #expected)!;
-    @run(PARSE, #args, #expected)!;
+    @run(LONG,  #args, #expected, expected_fault)!;
+    @run(PARSE, #args, #expected, expected_fault)!;
 }
 
-macro void? @run(CallType $test_type, #args, #expected) @local
+macro void? @run(CallType $test_type, #args, #expected, fault expected_fault = NON_FAULT) @local
 {
     String[] args;
     TestResult expected;
@@ -212,16 +215,26 @@ macro void? @run(CallType $test_type, #args, #expected) @local
     io::printf("\n=== NEW RUN === >>> %s\n", $test_type);
     foreach(i, a : args) io::printf("---> ARG[%d]: %s\n", i, a);
 
+    var $torun;
     $switch ($test_type) :
-        $case PARSE : parse_test(args)!;
-        $case SHORT : getopt_test(args)!;
-        $case LONG : getopt_long_test(args)!;
-        $case LONG_ONLY : getopt_long_only_test(args)!;
+        $case PARSE : $torun = "parse_test";
+        $case SHORT : $torun = "getopt_test";
+        $case LONG : $torun = "getopt_long_test";
+        $case LONG_ONLY : $torun = "getopt_long_only_test";
 
         $default : unreachable("Invalid $test_type CT enum value.");
     $endswitch
 
-    test::@check(t == expected, "\r\n\tExpected: %s\r\n\tActual t: %s", expected, t);
+    if (NON_FAULT == expected_fault)
+    {
+        $eval($torun)(args)!;
+        test::@check(t == expected, "\r\n\tExpected: %s\r\n\tActual t: %s", expected, t);
+    }
+    else
+    {
+        test::@error($eval($torun)(args), expected_fault);
+    }
+
     io::printn("===============");
 }
 
@@ -269,7 +282,7 @@ fn void simple_all()
 }
 
 
-// Literally just/ `simple_all` w/ a different prefix
+// Literally just `simple_all` w/ a different prefix
 fn void different_prefix()
 {
     opt::prefix = '/';
@@ -315,9 +328,8 @@ fn void exclusive_short_long_opts()
     @run_each({ "-abk" }, { .has_alpha = true, .has_bravo = true, .has_kilo = true })!!;
 
     // Ensure long/short options which aren't supposed to be there... aren't.
-    // TODO: Need a 'run_each' w/ should_error=true
-    // @run_each({ "-ab", "-j5" }, { .has_alpha = true, .has_bravo = true, .juliet = 0 })!!;
-    // @run_each_has_long({ "-ab", "--kilo" }, { .has_alpha = true, .has_bravo = true, .has_kilo = false })!!;
+    // @run_each({ "-ab", "-j5" }, { .has_alpha = true, .has_bravo = true, .juliet = 0 }, opt::MISSING_ARGUMENT)!!;
+    // @run_each_has_long({ "-ab", "--kilo" }, { .has_alpha = true, .has_bravo = true, .has_kilo = false }, opt::MISSING_ARGUMENT)!!;
 
     @run(LONG, { "--alpha", "--juliet", "17000" }, { .has_alpha = true, .juliet = 17000 })!!;
 }
