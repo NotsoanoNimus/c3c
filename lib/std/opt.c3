@@ -659,8 +659,8 @@ macro void? @parse(#args, ...)
             if (':' == optval) return ILLEGAL_OPTION?;
 
             $for var $argidx = 0; $argidx < $vacount; $argidx += 3 :
-                var $shortname = $ct_shortnames[$argidx / 3]; //$vaconst[$argidx];
-                var $longname = $ct_longnames[$argidx / 3]; //$vaconst[$argidx + 1];
+                var $shortname = $ct_shortnames[$argidx / 3];
+                var $longname = $ct_longnames[$argidx / 3];
 
                 if ((int)($shortname) == optval)
                 {

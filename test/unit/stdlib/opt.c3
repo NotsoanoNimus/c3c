@@ -267,9 +267,10 @@ fn void simple_all()
     @run_each({ "-d0.7", "-gg", "-go", "-i", "werp" }, { .delta = 0.7, .golf = { 'g', 'o', 0 }, .india = 'r' })!!;
 
     @run_each_has_long(
-        { "-abc123", "--delta=0.74", "-e", "--fox", "--", "nonopt" },
+        { "-abc123", "--delta=0.74", "-e", "--fox", "--", "nonopt", "these options", "-c3", "-dont", "get", "parsed" },
         { .has_alpha = true, .has_bravo = true, .charlie = 123, .delta = 0.74, .fox = 1 }
     )!!;
+    test::@check(opt::ind == 6, "opt::ind must equal the location where arguments are cut off or stopped with a single double-prefix.");
 
     @run_each_has_long({ `--echo=all by myself` }, { .echo = `all by myself` })!!;
     @run_each_has_long({ `-e'all by myself'` }, { .echo = `'all by myself'` })!!;
@@ -295,9 +296,10 @@ fn void different_prefix()
     @run_each({ "/d0.7", "/gg", "/go", "/i", "werp" }, { .delta = 0.7, .golf = { 'g', 'o', 0 }, .india = 'r' })!!;
 
     @run_each_has_long(
-        { "/abc123", "//delta=0.74", "/e", "//fox", "//", "nonopt" },
+        { "/abc123", "//delta=0.74", "/e", "//fox", "//", "nonopt", "these options", "/c3", "/dont", "get", "parsed" },
         { .has_alpha = true, .has_bravo = true, .charlie = 123, .delta = 0.74, .fox = 1 }
     )!!;
+    test::@check(opt::ind == 6, "opt::ind must equal the location where arguments are cut off or stopped with a single double-prefix.");
 
     @run_each_has_long({ `//echo=all by myself` }, { .echo = `all by myself` })!!;
     @run_each_has_long({ `/e'all by myself'` }, { .echo = `'all by myself'` })!!;
@@ -309,6 +311,12 @@ fn void different_prefix()
     )!!;
 
     opt::prefix = opt::DEFAULT_PREFIX;   // set it back
+}
+
+
+// Test '+', ':', or '-' prefix to option_str.
+fn void special_option_strings()
+{
 }
 
 
