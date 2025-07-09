@@ -241,7 +241,7 @@ fn void simple_all()
 
     // NOTE: --delta=0.74 still doesn't work...
     @run_each_has_long(
-        { "-abc123", "--delta", "0.74", "-e", "--fox", "--", "nonopt" },
+        { "-abc123", "--delta=0.74", "-e", "--fox", "--", "nonopt" },
         { .has_alpha = true, .has_bravo = true, .charlie = 123, .delta = 0.74, .fox = 1 }
     )!!;
 
