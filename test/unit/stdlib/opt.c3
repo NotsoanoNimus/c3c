@@ -71,7 +71,6 @@ const LongOption[] LONGOPTS = {
     { "golf",       REQUIRED_ARGUMENT,  null,   'g' },
     { "hotel",      REQUIRED_ARGUMENT,  null,   'h' },
     { "india",      REQUIRED_ARGUMENT,  null,   'i' },
-    {}   // sentinel
 };
 
 
@@ -143,7 +142,7 @@ fn void? common_switch(int retval) @local
             io::printn("(india)");
             if (opt::arg.len > 0 && *opt::arg.ptr)
             {
-                t.india = opt::arg[0];
+                get_india_value(opt::arg)!;
             }
             else
             {
@@ -166,8 +165,22 @@ enum CallType : const inline int @local
     SHORT,
     LONG,
     LONG_ONLY,
+    PARSE,
 }
 
+
+macro void? @run_each(#args, #expected) @local
+{
+    @run(SHORT, #args, #expected)!;
+    @run(LONG,  #args, #expected)!;
+    @run(PARSE, #args, #expected)!;
+}
+
+macro void? @run_each_has_long(#args, #expected) @local
+{
+    @run(LONG,  #args, #expected)!;
+    @run(PARSE, #args, #expected)!;
+}
 
 macro void? @run(CallType $test_type, #args, #expected) @local
 {
@@ -175,22 +188,27 @@ macro void? @run(CallType $test_type, #args, #expected) @local
     TestResult expected;
 
     fresh();   // fresh test
+    assert(t == (TestResult){}, "Static TestResult `t` was not cleared before another test started.");
+
     // 'args' is always prepended with a dummy value to mimic the ever-present '$0'
     args = { "program-name" , ...(String[])#args };   
-    expected = #expected;
 
-    io::printn("\n=== NEW RUN ===");
+    expected = #expected;   // set expected value from param expression
+
+    io::printf("\n=== NEW RUN === >>> %s\n", $test_type);
     foreach(i, a : args) io::printf("---> ARG[%d]: %s\n", i, a);
 
     $switch ($test_type) :
+        $case PARSE : parse_test(args)!;
         $case SHORT : getopt_test(args)!;
         $case LONG : getopt_long_test(args)!;
         $case LONG_ONLY : getopt_long_only_test(args)!;
 
-        $default : $error "Invalid test type. Valid types are 'SHORT', 'LONG', or 'LONG_ONLY'.";
+        $default : unreachable("Invalid $test_type CT enum value.");
     $endswitch
 
     test::@check(t == expected, "\r\n\tExpected: %s\r\n\tActual t: %s", expected, t);
+    io::printn("===============");
 }
 
 
@@ -206,21 +224,39 @@ fn void sanity_check_result_comparisons()
 
     right = { true, false, 123, 0.012312, "zstr", 90, {'a', 'x', 'd' }, { "str", "123", "xyz" }, 'w' };
     test::@check(left != right);
+
+    right = { true, true, 123, 0.012312, "a zstr", 90, {'a', 'x', 'd' }, { "str", "123", "xyz" }, 'w' };
+    test::@check(left != right);
 }
 
 
-fn void simple_short_opts()
+fn void simple_all()
 {
-    // Booleans/Flags.
-    @run(SHORT, { "-a", "-c", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
-    @run(SHORT, { "-ac", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
-    @run(SHORT, { "-bc", "888" }, { .has_alpha = false, .has_bravo = true, .charlie = 888 })!!;
+    @run_each({ "-b" }, { .has_bravo = true })!!;
+    @run_each({ "-a", "-c", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
+    @run_each({ "-ac", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
+    @run_each({ "-bc", "888" }, { .has_alpha = false, .has_bravo = true, .charlie = 888 })!!;
 }
 
-fn void simple_short_opts_failures()
+fn void simple_mix()
+{
+    //
+}
+
+fn void simple_failures()
 {
     // Missing arguments.
     // @run(SHORT, { "-a", "-c", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
     // @run(SHORT, { "-ac", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
     // @run(SHORT, { "-bc", "888" }, { .has_alpha = false, .has_bravo = true, .charlie = 888 })!!;
+}
+
+
+fn void callbacks()
+{
+    @run_each({ "-c456", "-ai", "xyzabc" }, { .charlie = 456, .has_alpha = true, .india = 'z' })!!;
+    @run_each({ "-i", "xyzabc" }, { .india = 'z' })!!;
+
+    @run_each_has_long({ "--india", "xyzabc" }, { .india = 'z' })!!;
+    @run_each_has_long({ "-c3", "--india", "xyzabc" }, { .charlie = 3, .india = 'z' })!!;
 }

@@ -580,14 +580,16 @@ macro void? @parse(#args, ...)
             $endswitch
         $endif
 
-        // Track the arg type in a CT variable.
+        // Track the arg type in CT variables.
         $ct_argstype[($argidx / 3)] = $has_arg;
-
-        // But also track the runtime longopts details.
-        longopts[$argidx / 3] = { $longname, $has_arg, null, (int)($shortname[0]) };
-        // ... lest we forget compile-time too.
         $ct_longnames[$argidx / 3] = $longname;
         $ct_shortnames[$argidx / 3] = $shortname[0];
+
+        // But also track the runtime longopts details.
+        var $has_arg_runtime = $has_arg == OptionArgType.INCREMENTAL ? OptionArgType.NO_ARGUMENT
+            : ($has_arg == OptionArgType.CALLBACK ? OptionArgType.REQUIRED_ARGUMENT : $has_arg);
+
+        longopts[$argidx / 3] = { $longname, $has_arg_runtime, null, (int)($shortname[0]) };
 
         // Quickly check for duplicate short/long option names.
         $for var $a = 0; $a < ($argidx / 3); ++$a :
