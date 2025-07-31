@@ -2,12 +2,15 @@
 // Use of this source code is governed by the MIT license
 // a copy of which can be found in the LICENSE_STDLIB file.
 //
+<*
+@require values::@is_int(HASH_BITS) : `HASH_BITS must be an integer type.`
+*>
 module std::hash::sha3_internal { HASH_BITS } @private;
 
 import std::hash::keccak @public;
 
 
-const HASH_BYTES = BITS / 8;
+const HASH_BYTES = HASH_BITS / 8;
 
 alias Sha3Context = KeccakContext { 1600, HASH_BITS, 24, 0x06 };   // FIPS-202 defines these constants for SHA-3
 

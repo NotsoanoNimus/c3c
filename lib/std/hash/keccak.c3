@@ -3,6 +3,11 @@
 // a copy of which can be found in the LICENSE_STDLIB file.
 //
 <*
+@require values::@is_int(F) : `F must be an integer type.`
+@require values::@is_int(OUTPUT_BITS) : `OUTPUT_BITS must be an integer type.`
+@require values::@is_int(ROUNDS) : `ROUNDS must be an integer type.`
+@require values::@is_int(DELIMITER) : `DELIMITER must be an integer type less than 256.`
+
 @require F >= 200 &&& F <= 1600 : `Invalid Keccak F; out of range.`
 @require F % 200 == 0 : `Keccak F must be a multiple of 200.`
 @require OUTPUT_BITS > 0 &&& OUTPUT_BITS * 2 < F &&& OUTPUT_BITS % 8 == 0 : `Invalid output bit length. Must be a multiple of 8, less than (F/2), and non-zero.`
@@ -168,10 +173,10 @@ fn void KeccakContext.squeeze(&self, char[] out)
 }
 
 
-macro KeccakContext.@permute(&self) @inline => self.@permute_r(MAX_ROUNDS);
+macro KeccakContext.@permute(&self) => self.@permute_r(MAX_ROUNDS);
 
 
-macro KeccakContext.@permute_r(&self, $rounds) @inline
+macro KeccakContext.@permute_r(&self, $rounds)
 {
 	var $i = RC.len - $rounds;
 
@@ -187,7 +192,7 @@ macro KeccakContext.@permute_r(&self, $rounds) @inline
 }
 
 
-macro KeccakContext.@round(&self, $round_counter) @inline
+macro KeccakContext.@round(&self, $round_counter)
 {
 	ulong[5] b;
 	ulong t;
