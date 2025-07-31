@@ -21,7 +21,7 @@ import std::math;
 
 const CAPACITY = OUTPUT_BITS * 2;
 const BLOCK_BYTES = F / 8;
-const MAX_ROUNDS = 12 + 2 * math::log2(F / 25);
+const MAX_ROUNDS = 12 + 2 * math::@intlog2(F / 25);
 const RATE = BLOCK_BYTES - CAPACITY / 8;
 const SPONGE_WORDS = F / 8 / ulong.sizeof;
 
