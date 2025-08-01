@@ -14,7 +14,7 @@
 @require ROUNDS <= MAX_ROUNDS : `Keccak Rounds must be less than or equal to the maximum value derived from F.`
 @require DELIMITER <= 0xFF : `Keccak Delimiters can only be one byte wide (< 255).`
 *>
-module std::hash::keccak { F, OUTPUT_BITS, ROUNDS, DELIMITER } @private;
+module std::hash::keccak_internal { F, OUTPUT_BITS, ROUNDS, DELIMITER } @private;
 
 import std::math;
 
@@ -27,12 +27,12 @@ const SPONGE_WORDS = F / 8 / ulong.sizeof;
 
 
 const ulong[24] RC = {   // round constants
-	0x0000000000000001, 0x0000000000008082, 0x800000000000808a, 0x8000000080008000,
-	0x000000000000808b, 0x0000000080000001, 0x8000000080008081, 0x8000000000008009,
-	0x000000000000008a, 0x0000000000000088, 0x0000000080008009, 0x000000008000000a,
-	0x000000008000808b, 0x800000000000008b, 0x8000000000008089, 0x8000000000008003,
-	0x8000000000008002, 0x8000000000000080, 0x000000000000800a, 0x800000008000000a,
-	0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008,
+	0x0000_0000_0000_0001,  0x0000_0000_0000_8082,  0x8000_0000_0000_808a,  0x8000_0000_8000_8000,
+	0x0000_0000_0000_808b,  0x0000_0000_8000_0001,  0x8000_0000_8000_8081,  0x8000_0000_0000_8009,
+	0x0000_0000_0000_008a,  0x0000_0000_0000_0088,  0x0000_0000_8000_8009,  0x0000_0000_8000_000a,
+	0x0000_0000_8000_808b,  0x8000_0000_0000_008b,  0x8000_0000_0000_8089,  0x8000_0000_0000_8003,
+	0x8000_0000_0000_8002,  0x8000_0000_0000_0080,  0x0000_0000_0000_800a,  0x8000_0000_8000_000a,
+	0x8000_0000_8000_8081,  0x8000_0000_0000_8080,  0x0000_0000_8000_0001,  0x8000_0000_8000_8008,
 };
 
 const char[24] RHO = {
@@ -59,18 +59,51 @@ struct KeccakContext
 	}
 	usz offset;   // tracking leftover bytes from absorption
 	char[RATE] buf;   // absorption buffer
+	char runtime_delimiter;
 }
 
 
-fn void KeccakContext.init(&self, usz f = 1600) @inline => *self = {};
+// The delimiter value can be given at compile-time, but can also be overridden at runtime
+//   by certain hash suites (e.g. TurboSHAKE).
+fn void KeccakContext.init(&self, char runtime_delimiter = DELIMITER) @inline
+	=> *self = { .runtime_delimiter = runtime_delimiter };
 
 
-fn void KeccakContext.update(&self, char[] data) @inline => self.absorb(data);
+fn void KeccakContext.update(&self, char[] data) => self.absorb(data);
 
 
-fn void KeccakContext.absorb(&self, char[] input)
+fn char[OUTPUT_BITS / 8] KeccakContext.final(&self)
 {
-	usz i = input.len;
+	char[OUTPUT_BITS / 8] result;
+
+	self.pad();
+	self.squeeze(result[:(OUTPUT_BITS / 8)]);
+
+	defer self.wipe();
+
+	return result;
+}
+
+
+fn char[OUTPUT_BITS / 8] hash(char[] data)
+{
+    KeccakContext k @noinit;
+    k.init();
+    k.update(data);
+    return k.final();
+}
+
+
+fn void KeccakContext.wipe(&self) @inline @if(env::LIBC) => mem::zero_volatile(@as_char_view(*self));
+fn void KeccakContext.wipe(&self) @inline @if(!env::LIBC)
+{
+	for (usz i = 0; i < self.sizeof; ++i) *@unaligned_load(&((char*)self)[i], 1) = 0x00;
+}
+
+
+fn void KeccakContext.absorb(&self, char[] input) @inline
+{
+	usz i;
 
 	if (self.offset > 0)   // handle any leftovers
 	{
@@ -83,7 +116,8 @@ fn void KeccakContext.absorb(&self, char[] input)
 
 		if (self.offset == RATE)
 		{
-			self.state[:RATE] ^= self.buf[..];
+			foreach (j, c : self.buf) self.state_bytes[j] ^= c;
+
 			self.@permute_r(ROUNDS);
 			self.offset = 0;
 		}
@@ -91,32 +125,23 @@ fn void KeccakContext.absorb(&self, char[] input)
 		i = left;
 	}
 
-	for (; i >= RATE; i -= RATE)
+	for (; i + RATE < input.len; i += RATE)
 	{
-		self.state[:RATE] ^= input[(input.len - i):RATE];
+		foreach (j, c : input[i:RATE]) self.state_bytes[j] ^= c;
+
 		self.@permute_r(ROUNDS);
 	}
 
-	if (i > 0) self.buf[..i] = input[^i..];
+	usz left = input.len - i;
+	if (left > 0) self.buf[:left] = input[i:left];
 
-	self.offset = i;
+	self.offset = left;
 }
 
 
-fn char[OUTPUT_BITS / 8] KeccakContext.final(&self)
+fn void KeccakContext.pad(&self) @inline
 {
-	char[OUTPUT_BITS / 8] result;
-
-	self.pad();
-	self.squeeze(result[:(OUTPUT_BITS / 8)]);
-
-	return result;
-}
-
-
-fn void KeccakContext.pad(&self)
-{
-	self.state[:self.offset] ^= self.buf[:self.offset];
+	foreach (j, c : self.buf[:self.offset]) self.state_bytes[j] ^= c;
 
 	if (self.offset == RATE)
 	{
@@ -124,17 +149,17 @@ fn void KeccakContext.pad(&self)
 		self.offset = 0;
 	}
 
-	self.state[self.offset] ^= DELIMITER;
-	self.state[RATE - 1] ^= 0x80;
+	self.state_bytes[self.offset] ^= self.runtime_delimiter;
+	self.state_bytes[RATE - 1] ^= 0x80;
 
 	self.@permute_r(ROUNDS);
 	self.offset = 0;
 }
 
 
-fn void KeccakContext.squeeze(&self, char[] out)
+fn void KeccakContext.squeeze(&self, char[] out) @inline
 {
-	usz i = out.len;
+	usz i;
 
 	if (self.offset == RATE)
 	{
@@ -143,7 +168,7 @@ fn void KeccakContext.squeeze(&self, char[] out)
 	else if (@unlikely(self.offset > 0))
 	{
 		char[RATE] localbuf;
-		localbuf[..] = self.state[..];
+		localbuf[..] = self.buf[..];
 
 		usz left = min(RATE - self.offset, out.len);
 
@@ -155,21 +180,24 @@ fn void KeccakContext.squeeze(&self, char[] out)
 		if (self.offset == RATE)
 		{
 			self.offset = 0;
+
 			self.@permute_r(ROUNDS);
 		}
 
 		i = left;
 	}
 
-	for (; i >= RATE; i -= RATE)
+	for (; i + RATE < out.len; i += RATE)
 	{
-		out[(out.len - i):RATE] = self.state[:RATE];
+		out[i:RATE] = self.state_bytes[:RATE];
+
 		self.@permute_r(ROUNDS);
 	}
 
-	if (i > 0) out[^i..] = self.state[^i..];
+	usz left = out.len - i;
+	if (left > 0) out[i:left] = self.state_bytes[:left];
 
-	self.offset = i;
+	self.offset = left;
 }
 
 
@@ -232,3 +260,22 @@ macro KeccakContext.@round(&self, $round_counter)
 	// Iota function.
 	self.state[0] ^= RC[$round_counter];
 }
+
+
+// Declare Keccak-specific hashing contexts and methods.
+module std::hash::keccak;
+
+import std::hash::keccak_internal @public;
+
+
+alias Keccak224 = KeccakContext { 1600, 224, 24, 0x01 };
+alias hash_224 = keccak_internal::hash { 1600, 224, 24, 0x01 };
+
+alias Keccak256 = KeccakContext { 1600, 256, 24, 0x01 };
+alias hash_256 = keccak_internal::hash { 1600, 256, 24, 0x01 };
+
+alias Keccak384 = KeccakContext { 1600, 384, 24, 0x01 };
+alias hash_384 = keccak_internal::hash { 1600, 384, 24, 0x01 };
+
+alias Keccak512 = KeccakContext { 1600, 512, 24, 0x01 };
+alias hash_512 = keccak_internal::hash { 1600, 512, 24, 0x01 };

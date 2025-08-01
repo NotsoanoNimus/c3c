@@ -7,7 +7,7 @@
 *>
 module std::hash::sha3_internal { HASH_BITS } @private;
 
-import std::hash::keccak @public;
+import std::hash::keccak_internal @public;
 
 
 const HASH_BYTES = HASH_BITS / 8;
@@ -29,15 +29,15 @@ module std::hash::sha3;
 import std::hash::sha3_internal @public;
 
 
-alias Sha3Context_224 = Sha3Context { 224 };
+alias Sha3_224 = Sha3Context { 224 };
 alias hash_224 = sha3_internal::hash { 224 };
 
-alias Sha3Context_256 = Sha3Context { 256 };
+alias Sha3_256 = Sha3Context { 256 };
 alias hash_256 = sha3_internal::hash { 256 };
 
-alias Sha3Context_384 = Sha3Context { 384 };
+alias Sha3_384 = Sha3Context { 384 };
 alias hash_384 = sha3_internal::hash { 384 };
 
-alias Sha3Context_512 = Sha3Context { 512 };
+alias Sha3_512 = Sha3Context { 512 };
 alias hash_512 = sha3_internal::hash { 512 };
 
