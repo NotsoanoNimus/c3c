@@ -101,6 +101,15 @@ fn void KeccakContext.wipe(&self) @inline @if(!env::LIBC)
 }
 
 
+fn void KeccakContext.fill_block(&self) @inline
+{
+	foreach(j, c : self.buf[:self.offset]) self.state_bytes[j] ^= c;
+
+	self.@permute_r(ROUNDS);
+	self.offset = 0;
+}
+
+
 fn void KeccakContext.absorb(&self, char[] input) @inline
 {
 	usz i;
@@ -266,7 +275,6 @@ macro KeccakContext.@round(&self, $round_counter)
 module std::hash::keccak;
 
 import std::hash::keccak_internal @public;
-
 
 alias Keccak224 = KeccakContext { 1600, 224, 24, 0x01 };
 alias hash_224 = keccak_internal::hash { 1600, 224, 24, 0x01 };
