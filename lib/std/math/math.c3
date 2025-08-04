@@ -362,23 +362,6 @@ macro @intlog2($x)
 }
 
 <*
- @require values::@is_int($x) : `The input value must be an integer.`
- @require $x >= 0 : `The input value must be a positive integer.`
- @return `A floored base-2 log of an input integer value.`
-*>
-macro @intlog2($x)
-{
-	$if $x <= 1:
-		return 0;
-	$endif
-
-	$typeof($x) $z = 0;
-	$for var $y = $x; $y > 0; $y >>= 1, ++$z: $endfor
-
-	return $z - 1;
-}
-
-<*
  @require values::@is_promotable_to_floatlike(x) : `The input must be a number or a float vector`
 *>
 macro log10(x) => $$log10(values::promote_int(x));
