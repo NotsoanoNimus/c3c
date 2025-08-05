@@ -3,6 +3,7 @@
 // a copy of which can be found in the LICENSE_STDLIB file.
 //
 // See: NIST SP 800-185: https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-185.pdf
+//   Document Section 2.3.1.
 //
 module std::hash::nist @private;
 
@@ -33,7 +34,7 @@ macro char[] @ct_encode_length(NistEncodingType $direction, usz $length) @const
 
     $buf[$end] = (char)($length << 3);
 
-    usz $len_sub = $len >> 5;
+    usz $len_sub = $length >> 5;
 
     $for var $i = 1; $i < $byte_size; ++$i, $len_sub >>= 8:
         $buf[$end - $i] = (char)$len_sub;
@@ -65,7 +66,7 @@ macro char[] encode_length(NistEncodingType $direction, usz length)
 
     buf[end] = (char)(length << 3);
 
-    usz len_sub = len >> 5;
+    usz len_sub = length >> 5;
 
     for (usz i = 1; i < byte_size; ++i, len_sub >>= 8) buf[end - i] = (char)len_sub;
 

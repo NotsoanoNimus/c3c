@@ -44,7 +44,7 @@ fn void hash_into(char[] data, char[] into, String optional_customization = "")
     }
 
     CShakeContext c;
-    defer c.under.wipe();
+    defer c.wipe();
 
     c.init(optional_customization);
     c.update(data);
@@ -56,6 +56,7 @@ fn void CShakeContext.absorb(&self, char[] data) => self.under.absorb(data);
 fn void CShakeContext.squeeze(&self, char[] into) => self.under.squeeze(into);
 fn void CShakeContext.pad(&self) => self.under.pad();
 fn void CShakeContext.wipe(&self) => self.under.wipe();
+fn void CShakeContext.fill_block(&self) => self.under.fill_block();
 
 fn void CShakeContext.init(&self, String optional_customization = "")
 {
