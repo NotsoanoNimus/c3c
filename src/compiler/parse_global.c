@@ -499,8 +499,7 @@ static inline TypeInfo *parse_generic_type(ParseContext *c, TypeInfo *type)
 {
 	ASSERT(type_info_ok(type));
 	TypeInfo *generic_type = type_info_new(TYPE_INFO_GENERIC, type->span);
-	advance_and_verify(c, TOKEN_LBRACE);
-	if (!parse_expr_list(c, &generic_type->generic.params, TOKEN_RBRACE)) return poisoned_type_info;
+	if (!parse_generic_expr_list(c, &generic_type->generic.params)) return poisoned_type_info;
 	generic_type->generic.base = type;
 	return generic_type;
 }
@@ -2592,11 +2591,6 @@ static inline Decl *parse_enum_declaration(ParseContext *c)
 	if (try_consume(c, TOKEN_COLON))
 	{
 		is_const_enum = try_consume(c, TOKEN_CONST);
-		if (is_const_enum && compiler.build.old_enums)
-		{
-			PRINT_ERROR_LAST("'const' enums are not available with '--use-old-enums'.");
-			return poisoned_decl;
-		}
 		if (!tok_is(c, TOKEN_LPAREN) && !tok_is(c, TOKEN_LBRACE))
 		{
 			val_is_inline = try_consume(c, TOKEN_INLINE);

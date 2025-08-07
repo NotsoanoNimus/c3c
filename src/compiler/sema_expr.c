@@ -1097,7 +1097,7 @@ static inline bool sema_expr_analyse_ternary(SemaContext *context, Type *infer_t
 			{
 				RETURN_SEMA_ERROR(expr, "The ternary would be an 'untyped list', you need to explicitly type one or both branches to a runtime type.");
 			}
-			RETURN_SEMA_ERROR(expr, "A ternary must always return a runtime type, but it was %s.", type_quoted_error_string(left_canonical));
+			RETURN_SEMA_ERROR(expr, "A ternary must always return a runtime type, but it was %s.", type_invalid_storage_type_name(left_canonical));
 			break;
 		default:
 			break;
@@ -5704,7 +5704,7 @@ static bool sema_expr_rewrite_to_type_property(SemaContext *context, Expr *expr,
 					.property = property };
 				return true;
 			}
-			goto TYPE_CALL;;
+			goto TYPE_CALL;
 		case TYPE_PROPERTY_LOOKUP:
 			if (!compiler.build.old_enums)
 			{
@@ -6764,13 +6764,13 @@ static bool sema_binary_analyse_ct_op_assign(SemaContext *context, Expr *expr, E
 	if (!sema_expr_analyse_binary(context, NULL, expr, NULL)) return false;
 	expr->resolve_status = RESOLVE_DONE;
 
-	if (!sema_cast_const(expr))
+	if (!expr_is_runtime_const(expr))
 	{
-		RETURN_SEMA_ERROR(exprptr(expr->binary_expr.right), "Expected a constant expression.");
+		RETURN_SEMA_ERROR(expr, "Expected this to result in a constant expression.");
 	}
 
 	left_var->var.init_expr = expr;
-	left->type = expr->type;
+	left_var->type = expr->type;
 	return true;
 }
 
@@ -6961,6 +6961,7 @@ static bool sema_expr_analyse_op_assign_enum_ptr(SemaContext *context, Expr *rhs
 	}
 	return true;
 }
+
 /**
  * Analyse *= /= %= ^= |= &= += -= <<= >>=
  *
@@ -7026,12 +7027,7 @@ static bool sema_expr_analyse_op_assign(SemaContext *context, Expr *expr, Expr *
 	Type *canonical = no_fail->canonical;
 	if (type_is_user_defined(canonical))
 	{
-		if (canonical->type_kind == TYPE_BITSTRUCT)
-		{
-			if (operator == BINARYOP_BIT_OR_ASSIGN
-				|| operator == BINARYOP_BIT_AND_ASSIGN
-				|| operator == BINARYOP_BIT_XOR_ASSIGN) goto SKIP_OVERLOAD_CHECK;
-		}
+		if (canonical->type_kind == TYPE_BITSTRUCT && is_bit_op) goto SKIP_OVERLOAD_CHECK;
 		BoolErr b = sema_insert_overload_in_op_assign_or_error(context, expr, left, right, operator, no_fail->canonical);
 		if (b == BOOL_ERR) return false;
 		if (b == BOOL_TRUE) return true;
@@ -8575,7 +8571,7 @@ static inline bool sema_expr_analyse_bit_not(SemaContext *context, Expr *expr, b
 	}
 
 VALID_VEC:
-	if (is_bitstruct && sema_cast_const(inner))
+	if (is_bitstruct && sema_cast_const(inner) && expr_is_const_initializer(inner))
 	{
 		expr_replace(expr, inner);
 		sema_invert_bitstruct_const_initializer(expr->const_expr.initializer);
@@ -8589,7 +8585,6 @@ VALID_VEC:
 	// 3. The simple case, non-const.
 	if (!expr_const_foldable_unary(inner, UNARYOP_BITNEG))
 	{
-
 		expr->type = inner->type;
 		return true;
 	}
@@ -10073,7 +10068,7 @@ static inline bool sema_expr_analyse_generic_ident(SemaContext *context, Expr *e
 	}
 	Decl *symbol = sema_analyse_parameterized_identifier(context, parent->unresolved_ident_expr.path,
 														 parent->unresolved_ident_expr.ident, parent->span,
-														 expr->generic_ident_expr.parmeters, NULL);
+														 expr->generic_ident_expr.parameters, NULL);
 	if (!decl_ok(symbol)) return false;
 	expr_resolve_ident(expr, symbol);
 	return true;
@@ -10083,11 +10078,7 @@ static inline bool sema_expr_analyse_lambda(SemaContext *context, Type *target_t
 {
 	Decl *decl = expr->lambda_expr;
 	if (!decl_ok(decl)) return false;
-	if (decl->resolve_status == RESOLVE_DONE)
-	{
-		expr->type = type_get_func_ptr(decl->type);
-		return true;
-	}
+	assert(decl->resolve_status != RESOLVE_DONE);
 	Type *flat = target_type ? type_flatten(target_type) : NULL;
 	if (flat)
 	{
@@ -10224,19 +10215,18 @@ static inline bool sema_expr_analyse_lambda(SemaContext *context, Type *target_t
 	}
 
 	expr->type = type_get_func_ptr(decl->type);
-	// If it's a distinct type we have to make a cast.
 	expr->resolve_status = RESOLVE_DONE;
+	expr_rewrite_const_ref(expr, decl);
+	// If it's a distinct type we have to make a cast.
 	if (target_type && expr->type != target_type && !cast_explicit(context, expr, target_type)) return false;
 	if (multiple)
 	{
 		vec_add(original->func_decl.generated_lambda, decl);
 	}
 	decl->resolve_status = RESOLVE_DONE;
-	expr_rewrite_const_ref(expr, decl);
 	return true;
 FAIL_NO_INFER:
-	SEMA_ERROR(expr, "Inferred lambda expressions cannot be used unless the type can be determined.");
-	return false;
+	RETURN_SEMA_ERROR(expr, "Inferred lambda expressions cannot be used unless the type can be determined.");
 }
 
 static inline bool sema_expr_analyse_ct_feature(SemaContext *context, Expr *expr)
