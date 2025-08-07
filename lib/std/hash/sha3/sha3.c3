@@ -5,20 +5,28 @@
 <*
 @require values::@is_int(HASH_BITS) : `HASH_BITS must be an integer type.`
 *>
-module std::hash::sha3_internal { HASH_BITS } @private;
+module std::hash::sha3::sha3_internal { HASH_BITS } @private;
 
-import std::hash::keccak_internal @public;
+import std::hash::sha3::keccak_internal @public;
 
 const HASH_BYTES = HASH_BITS / 8;
 
 alias Sha3Context = KeccakContext { 1600, HASH_BITS, 24, 0x06 };   // FIPS-202 defines these constants for SHA-3
 
 fn char[HASH_BYTES] hash(char[] data) => keccak_internal::hash{ 1600, HASH_BITS, 24, 0x06 }(data);
+// fn char[HASH_BYTES] hash(char[] data)
+// {
+//     char[HASH_BYTES] result;
+
+//     keccak_internal::hash{ 1600, HASH_BITS, 24, 0x06 }(data, result[..]);
+
+//     return result;
+// }
 
 
-module std::hash::sha3;
+module std::hash::sha3::sha3;
 
-import std::hash::sha3_internal @public;
+import std::hash::sha3::sha3_internal @public;
 
 alias Sha3_224 = Sha3Context { 224 };
 alias hash_224 = sha3_internal::hash { 224 };

@@ -4,41 +4,36 @@
 //
 // See: NIST SP 800-185: https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-185.pdf
 //
-module std::hash::cshake_common;
+module std::hash::sha3::cshake_common;
 
-enum CShakeFunctionName : inline uint
+enum CShakeFunctionName : int (String customizer)
 {
-    NONE,
-    KMAC,
+    NONE = "",
+    KMAC = "KMAC",
 }
-
-const String[] FUNCTION_NAMES = {
-    "",
-    "KMAC",
-};
 
 
 <*
- @require @typeis(FUNC_NAME, cshake_common::CShakeFunctionName) : "`FUNC_NAME` must be a NIST-approved constant string."
+ @require types::is_int($typeof(SECURITY_LEVEL)) &&& SECURITY_LEVEL > 0 : "SECURITY_LEVEL must be a positive integer value greater than 0."
+ @require types::is_int($typeof(ROUNDS)) &&& ROUNDS > 0 : "ROUNDS must be a positive integer value greater than 0."
+ @require types::is_int($typeof(DELIMITER)) &&& DELIMITER >= 0 : "DELIMITER must be a positive integer value greater than or equal to 0."
 *>
-module std::hash::cshake_internal { SECURITY_LEVEL, ROUNDS, DELIMITER, FUNC_NAME } @private;
+module std::hash::sha3::cshake_internal { SECURITY_LEVEL, ROUNDS, DELIMITER } @private;
 
-import std::hash::shake;
-import std::hash::shake_internal @public, std::hash::cshake_common;
-import std::hash::nist @public;
+import std::hash::sha3::shake;
+import std::hash::sha3::shake_internal @public, std::hash::sha3::cshake_common;
+import std::hash::sha3::nist @public;
 
 const RATE = shake_internal::RATE { SECURITY_LEVEL, ROUNDS, DELIMITER };
 
-alias UnderShake @local = ShakeContext{ SECURITY_LEVEL, ROUNDS, DELIMITER };
-
 struct CShakeContext
 {
-    UnderShake under;
+    inline ShakeContext{ SECURITY_LEVEL, ROUNDS, DELIMITER } under;
 }
 
-fn void hash_into(char[] data, char[] into, String optional_customization = "")
+macro void hash_into(char[] data, char[] into, CShakeFunctionName $function = NONE, String optional_customization = "")
 {
-    if (optional_customization == "" && cshake_common::FUNCTION_NAMES[FUNC_NAME] == "")
+    if (optional_customization == "" && $function.customizer == "")
     {
         return shake_internal::hash_into{ SECURITY_LEVEL, ROUNDS, 0x1F }(data, into);
     }
@@ -46,21 +41,15 @@ fn void hash_into(char[] data, char[] into, String optional_customization = "")
     CShakeContext c;
     defer c.wipe();
 
-    c.init(optional_customization);
+    c.init($function, optional_customization);
     c.update(data);
     c.pad();
     c.squeeze(into);
 }
 
-fn void CShakeContext.absorb(&self, char[] data) => self.under.absorb(data);
-fn void CShakeContext.squeeze(&self, char[] into) => self.under.squeeze(into);
-fn void CShakeContext.pad(&self) => self.under.pad();
-fn void CShakeContext.wipe(&self) => self.under.wipe();
-fn void CShakeContext.fill_block(&self) => self.under.fill_block();
-
-fn void CShakeContext.init(&self, String optional_customization = "")
+macro void CShakeContext.init(&self, CShakeFunctionName $function = NONE, String optional_customization = "")
 {
-    String $function_name = cshake_common::FUNCTION_NAMES[FUNC_NAME];
+    String $function_name = $function.customizer;
 
     if (optional_customization == "" && $function_name == "")
     {
@@ -99,19 +88,30 @@ macro char[*] CShakeContext.final(&self) => self.under.final();
 
 
 <*
- @require @typeis(FUNC_NAME, cshake_common::CShakeFunctionName) : "`FUNC_NAME` must be a NIST-approved constant string."
+ Parameterized CShake module with a custom security level. Implementations should prefer
+ to use common or well-known CShake variants in the 'cshake' module.
+
+ @require types::is_int($typeof(SECURITY_LEVEL)) &&& SECURITY_LEVEL > 0 : "SECURITY_LEVEL must be a positive integer value greater than 0."
 *>
-module std::hash::cshake { FUNC_NAME };
+module std::hash::sha3::cshake_p { SECURITY_LEVEL };
 
-import std::hash::cshake_internal @public, std::hash::cshake_common;
+import std::hash::sha3::cshake_internal @public, std::hash::sha3::cshake_common;
 
-alias CShake128 = CShakeContext { 128, 24, 0x04, FUNC_NAME };
-alias hash_128 = cshake_internal::hash_into { 128, 24, 0x04, FUNC_NAME };
-const RATE_128 = cshake_internal::RATE { 128, 24, 0x04, FUNC_NAME };
+const RATE = cshake_internal::RATE { SECURITY_LEVEL, 24, 0x04 };
 
-alias CShake256 = CShakeContext { 256, 24, 0x04, FUNC_NAME };
-alias hash_256 = cshake_internal::hash_into { 256, 24, 0x04, FUNC_NAME };
-const RATE_256 = cshake_internal::RATE { 256, 24, 0x04, FUNC_NAME };
+alias CShake = CShakeContext { SECURITY_LEVEL, 24, 0x04 };
+alias hash = cshake_internal::hash_into { SECURITY_LEVEL, 24, 0x04 };
+
+
+module std::hash::sha3::cshake;
+
+import std::hash::sha3::cshake_p;
+
+alias CShake128 = CShake { 128 };
+alias hash_128 = cshake_p::hash { 128 };
+
+alias CShake256 = CShake { 256 };
+alias hash_256 = cshake_p::hash { 256 };
 
 <*
 @require $security_level == 128 ||| $security_level == 256 : `The security level for SHAKE must be 128 or 256.`
@@ -121,7 +121,7 @@ macro char[*] @hash($security_level, $outlen_bytes, char[] data, String optional
 {
     char[$outlen_bytes] result;
 
-    cshake_internal::hash_into{ $security_level, 24, 0x04, FUNC_NAME }(data, result[..], optional_customization);
+    cshake_p::hash{ $security_level }(data, result[..], NONE, optional_customization);
 
     return result;
 }

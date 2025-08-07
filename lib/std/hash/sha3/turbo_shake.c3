@@ -10,29 +10,33 @@
 //   become very confusing to maintainers. It's not worth folding this into SHAKE to save a few
 //   extra lines.
 //
-module std::hash::turbo_shake;
+module std::hash::sha3::turbo_shake_p { SECURITY_LEVEL };
 
-import std::hash::shake_internal @public;
+import std::hash::sha3::shake_internal @public;
 
-const ROUNDS = 12;
+alias TurboShakeContext = ShakeContext { SECURITY_LEVEL, 12, 0x1F };
+alias hash_into = shake_internal::hash_into { SECURITY_LEVEL, 12, 0x1F };
 
-alias TurboShake128 = ShakeContext { 128, ROUNDS, 0x1F };
-alias hash_128 = shake_internal::turbo_hash { 128, ROUNDS, 0x1F };
-const RATE_128 = shake_internal::RATE { 128, ROUNDS, 0x1F };
 
-alias TurboShake256 = ShakeContext { 256, ROUNDS, 0x1F };
-alias hash_256 = shake_internal::turbo_hash { 256, ROUNDS, 0x1F };
-const RATE_256 = shake_internal::RATE { 256, ROUNDS, 0x1F };
+module std::hash::sha3::turbo_shake;
+
+import std::hash::sha3::turbo_shake_p;
+
+alias TurboShake128 = TurboShakeContext { 128 };
+alias hash_128 = turbo_shake_p::hash_into { 128 };
+
+alias TurboShake256 = TurboShakeContext { 256 };
+alias hash_256 = turbo_shake_p::hash_into { 256 };
 
 <*
 @require $security_level == 128 ||| $security_level == 256 : `The security level for TurboSHAKE must be 128 or 256.`
 @require $outlen_bytes > 0 : `Output length must be greater than zero.`
 *>
-macro char[*] @hash($security_level, $outlen_bytes, char[] data, $delimiter = 0x1F)
+macro char[*] @hash($security_level, $outlen_bytes, char[] data, char $delimiter = 0x1F)
 {
     char[$outlen_bytes] result;
 
-    shake_internal::turbo_hash{ $security_level, ROUNDS, 0x1F }(data, result[..], $delimiter);
+    turbo_shake_p::hash_into{ $security_level }(data, result[..], $delimiter);
 
     return result;
 }

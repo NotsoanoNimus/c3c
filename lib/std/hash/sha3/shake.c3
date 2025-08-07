@@ -2,9 +2,9 @@
 // Use of this source code is governed by the MIT license
 // a copy of which can be found in the LICENSE_STDLIB file.
 //
-module std::hash::shake_internal { SECURITY_LEVEL, ROUNDS, DELIMITER } @private;
+module std::hash::sha3::shake_internal { SECURITY_LEVEL, ROUNDS, DELIMITER } @private;
 
-import std::hash::keccak_internal @public;
+import std::hash::sha3::keccak_internal @public;
 
 const char DEFAULT_DELIMITER = 0x1F;
 
@@ -16,12 +16,12 @@ alias ShakeContext = KeccakContext { 1600, SECURITY_LEVEL, ROUNDS, DELIMITER };
 <*
  @require into.len > 0 : `Cannot use an empty SHAKE destination.`
 *>
-fn void hash_into(char[] data, char[] into)
+fn void hash_into(char[] data, char[] into, char delimiter_override = DELIMITER)
 {
     ShakeContext s @noinit;
     defer s.wipe();
 
-    s.init();
+    s.init(delimiter_override);
     s.absorb(data);
     s.pad();
     s.squeeze(into);
@@ -31,21 +31,21 @@ fn void hash_into(char[] data, char[] into)
 //   Note that, while this is doing essentially the same thing as `hash_into`, we absolutely
 //   CANNOT allow `hash_into` to accept an optional delimiter value for SHAKE like TurboSHAKE.
 //   This would create a more confusing API at the cost of trimming a few lines.
-fn void turbo_hash(char[] data, char[] into, char delimiter = 0x1F)
-{
-    ShakeContext s @noinit;
-    defer s.wipe();
+// fn void turbo_hash(char[] data, char[] into, char delimiter = 0x1F)
+// {
+//     ShakeContext s @noinit;
+//     defer s.wipe();
 
-    s.init(delimiter);
-    s.absorb(data);
-    s.pad();
-    s.squeeze(into);
-}
+//     s.init(delimiter);
+//     s.absorb(data);
+//     s.pad();
+//     s.squeeze(into);
+// }
 
 
-module std::hash::shake;
+module std::hash::sha3::shake;
 
-import std::hash::shake_internal @public;
+import std::hash::sha3::shake_internal @public;
 
 const ROUNDS = 24;
 

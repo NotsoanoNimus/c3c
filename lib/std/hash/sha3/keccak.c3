@@ -14,7 +14,7 @@
 @require ROUNDS <= MAX_ROUNDS : `Keccak Rounds must be less than or equal to the maximum value derived from F.`
 @require DELIMITER <= 0xFF : `Keccak Delimiters can only be one byte wide (< 255).`
 *>
-module std::hash::keccak_internal { F, OUTPUT_BITS, ROUNDS, DELIMITER } @private;
+module std::hash::sha3::keccak_internal { F, OUTPUT_BITS, ROUNDS, DELIMITER } @private;
 
 import std::math;
 
@@ -272,9 +272,9 @@ macro KeccakContext.@round(&self, $round_counter)
 
 
 // Declare Keccak-specific hashing contexts and methods.
-module std::hash::keccak;
+module std::hash::sha3::keccak;
 
-import std::hash::keccak_internal @public;
+import std::hash::sha3::keccak_internal @public;
 
 alias Keccak224 = KeccakContext { 1600, 224, 24, 0x01 };
 alias hash_224 = keccak_internal::hash { 1600, 224, 24, 0x01 };
