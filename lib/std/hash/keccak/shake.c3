@@ -51,11 +51,9 @@ const ROUNDS = 24;
 
 alias Shake128 = ShakeContext { 128, ROUNDS, 0x1F };
 alias hash_128 = shake_internal::hash_into { 128, ROUNDS, 0x1F };
-const RATE_128 = shake_internal::RATE { 128, ROUNDS, 0x1F };
 
 alias Shake256 = ShakeContext { 256, ROUNDS, 0x1F };
 alias hash_256 = shake_internal::hash_into { 256, ROUNDS, 0x1F };
-const RATE_256 = shake_internal::RATE { 256, ROUNDS, 0x1F };
 
 <*
 @require $security_level == 128 ||| $security_level == 256 : `The security level for SHAKE must be 128 or 256.`
