@@ -5,9 +5,9 @@
 <*
 @require values::@is_int(HASH_BITS) : `HASH_BITS must be an integer type.`
 *>
-module std::hash::sha3::sha3_internal { HASH_BITS } @private;
+module std::hash::keccak::sha3_internal { HASH_BITS } @private;
 
-import std::hash::sha3::keccak_internal @public;
+import std::hash::keccak::keccak_internal @public;
 
 const HASH_BYTES = HASH_BITS / 8;
 
@@ -24,9 +24,9 @@ fn char[HASH_BYTES] hash(char[] data) => keccak_internal::hash{ 1600, HASH_BITS,
 // }
 
 
-module std::hash::sha3::sha3;
+module std::hash::keccak::sha3;
 
-import std::hash::sha3::sha3_internal @public;
+import std::hash::keccak::sha3_internal @public;
 
 alias Sha3_224 = Sha3Context { 224 };
 alias hash_224 = sha3_internal::hash { 224 };

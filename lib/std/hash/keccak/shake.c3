@@ -2,9 +2,9 @@
 // Use of this source code is governed by the MIT license
 // a copy of which can be found in the LICENSE_STDLIB file.
 //
-module std::hash::sha3::shake_internal { SECURITY_LEVEL, ROUNDS, DELIMITER } @private;
+module std::hash::keccak::shake_internal { SECURITY_LEVEL, ROUNDS, DELIMITER } @private;
 
-import std::hash::sha3::keccak_internal @public;
+import std::hash::keccak::keccak_internal @public;
 
 const char DEFAULT_DELIMITER = 0x1F;
 
@@ -43,9 +43,9 @@ fn void hash_into(char[] data, char[] into, char delimiter_override = DELIMITER)
 // }
 
 
-module std::hash::sha3::shake;
+module std::hash::keccak::shake;
 
-import std::hash::sha3::shake_internal @public;
+import std::hash::keccak::shake_internal @public;
 
 const ROUNDS = 24;
 

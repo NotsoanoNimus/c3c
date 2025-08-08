@@ -4,7 +4,7 @@
 //
 // See: NIST SP 800-185: https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-185.pdf
 //
-module std::hash::sha3::cshake_common;
+module std::hash::keccak::cshake_common;
 
 enum CShakeFunctionName : int (String customizer)
 {
@@ -18,11 +18,11 @@ enum CShakeFunctionName : int (String customizer)
  @require types::is_int($typeof(ROUNDS)) &&& ROUNDS > 0 : "ROUNDS must be a positive integer value greater than 0."
  @require types::is_int($typeof(DELIMITER)) &&& DELIMITER >= 0 : "DELIMITER must be a positive integer value greater than or equal to 0."
 *>
-module std::hash::sha3::cshake_internal { SECURITY_LEVEL, ROUNDS, DELIMITER } @private;
+module std::hash::keccak::cshake_internal { SECURITY_LEVEL, ROUNDS, DELIMITER } @private;
 
-import std::hash::sha3::shake;
-import std::hash::sha3::shake_internal @public, std::hash::sha3::cshake_common;
-import std::hash::sha3::nist @public;
+import std::hash::keccak::shake;
+import std::hash::keccak::shake_internal @public, std::hash::keccak::cshake_common;
+import std::hash::keccak::nist @public;
 
 const RATE = shake_internal::RATE { SECURITY_LEVEL, ROUNDS, DELIMITER };
 
@@ -93,9 +93,9 @@ macro char[*] CShakeContext.final(&self) => self.under.final();
 
  @require types::is_int($typeof(SECURITY_LEVEL)) &&& SECURITY_LEVEL > 0 : "SECURITY_LEVEL must be a positive integer value greater than 0."
 *>
-module std::hash::sha3::cshake_p { SECURITY_LEVEL };
+module std::hash::keccak::cshake_p { SECURITY_LEVEL };
 
-import std::hash::sha3::cshake_internal @public, std::hash::sha3::cshake_common;
+import std::hash::keccak::cshake_internal @public, std::hash::keccak::cshake_common;
 
 const RATE = cshake_internal::RATE { SECURITY_LEVEL, 24, 0x04 };
 
@@ -103,9 +103,9 @@ alias CShake = CShakeContext { SECURITY_LEVEL, 24, 0x04 };
 alias hash = cshake_internal::hash_into { SECURITY_LEVEL, 24, 0x04 };
 
 
-module std::hash::sha3::cshake;
+module std::hash::keccak::cshake;
 
-import std::hash::sha3::cshake_p;
+import std::hash::keccak::cshake_p;
 
 alias CShake128 = CShake { 128 };
 alias hash_128 = cshake_p::hash { 128 };

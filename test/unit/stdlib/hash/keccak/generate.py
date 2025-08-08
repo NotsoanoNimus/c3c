@@ -89,8 +89,8 @@ def get_kmacs():
 
 def main():
 	res = {
-		'KECCAK':		get_digests([224, 256, 384, 512], keccak_digest),
-		# 'SHA3':			get_digests([224, 256, 384, 512], sha3_digest),
+		# 'KECCAK':		get_digests([224, 256, 384, 512], keccak_digest),
+		'SHA3':			get_digests([224, 256, 384, 512], sha3_digest),
 		# 'SHAKE':		get_xofs([128, 256], [16, 256], sample_custom_strs, shake_xof),
 		# 'TURBO-SHAKE':	get_xofs([128, 256], [16, 256], sample_custom_strs, turboshake_xof),
 		# 'CSHAKE':		get_xofs([128, 256], [16, 256], sample_custom_strs, cshake_xof),

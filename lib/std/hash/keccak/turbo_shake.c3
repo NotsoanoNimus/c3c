@@ -10,17 +10,17 @@
 //   become very confusing to maintainers. It's not worth folding this into SHAKE to save a few
 //   extra lines.
 //
-module std::hash::sha3::turbo_shake_p { SECURITY_LEVEL };
+module std::hash::keccak::turbo_shake_p { SECURITY_LEVEL };
 
-import std::hash::sha3::shake_internal @public;
+import std::hash::keccak::shake_internal @public;
 
 alias TurboShakeContext = ShakeContext { SECURITY_LEVEL, 12, 0x1F };
 alias hash_into = shake_internal::hash_into { SECURITY_LEVEL, 12, 0x1F };
 
 
-module std::hash::sha3::turbo_shake;
+module std::hash::keccak::turbo_shake;
 
-import std::hash::sha3::turbo_shake_p;
+import std::hash::keccak::turbo_shake_p;
 
 alias TurboShake128 = TurboShakeContext { 128 };
 alias hash_128 = turbo_shake_p::hash_into { 128 };

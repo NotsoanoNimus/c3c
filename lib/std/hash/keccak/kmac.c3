@@ -7,10 +7,10 @@
 <*
  @require types::is_int($typeof(SECURITY_LEVEL)) &&& SECURITY_LEVEL > 0 : "SECURITY_LEVEL must be a positive integer value greater than 0."
 *>
-module std::hash::sha3::kmac_internal { SECURITY_LEVEL } @private;
+module std::hash::keccak::kmac_internal { SECURITY_LEVEL } @private;
 
-import std::hash::sha3::cshake_p, std::hash::sha3::cshake_common;
-import std::hash::sha3::nist @public;
+import std::hash::keccak::cshake_p, std::hash::keccak::cshake_common;
+import std::hash::keccak::nist @public;
 
 struct KmacContext
 {
@@ -61,9 +61,9 @@ macro char[*] @hash($outlen_bytes, char[] key, char[] data, String optional_cust
 
 
 // Names for the KMAC structures are a bit 
-module std::hash::sha3::kmac;
+module std::hash::keccak::kmac;
 
-import std::hash::sha3::kmac_internal @public;
+import std::hash::keccak::kmac_internal @public;
 
 alias Kmac128 = KmacContext { 128 };
 alias @hash_128 = kmac_internal::@hash { 128 };
