@@ -213,7 +213,22 @@ fn void KeccakContext.squeeze(&self, char[] out) @inline
 macro KeccakContext.@permute(&self) => self.@permute_r(MAX_ROUNDS);
 
 
-macro KeccakContext.@permute_r(&self, $rounds)
+macro KeccakContext.@permute_r(&self, rounds) @if (!$feature(SHA3_UNROLLED)) => self.permute_r(rounds);
+fn void KeccakContext.permute_r(&self, usz rounds) @if (!$feature(SHA3_UNROLLED))
+{
+	usz i = RC.len - rounds;
+
+	for (; i < RC.len - (RC.len % 3); i += 3)
+	{
+		self.@round(i);
+		self.@round(i + 1);
+		self.@round(i + 2);
+	}
+
+	for (; i < RC.len; ++i) self.@round(i);
+}
+
+macro KeccakContext.@permute_r(&self, $rounds) @if ($feature(SHA3_UNROLLED))
 {
 	var $i = RC.len - $rounds;
 
@@ -229,12 +244,50 @@ macro KeccakContext.@permute_r(&self, $rounds)
 }
 
 
-macro KeccakContext.@round(&self, $round_counter)
+macro KeccakContext.@round(&self, round_counter) @if (!$feature(SHA3_UNROLLED)) => self.round(round_counter);
+fn void KeccakContext.round(&self, usz round_counter) @if (!$feature(SHA3_UNROLLED))
 {
 	ulong[5] b;
 	ulong t;
 
 	// Theta function.
+	for (usz x = 0; x < 5; ++x)
+	{
+		b[x] = 0;
+
+		for (usz y = 0; y < 25; y += 5) b[x] ^= self.state[x + y];
+	}
+	for (usz x = 0; x < 5; ++x)
+	{
+		for (usz y = 0; y < 25; y += 5) self.state[x + y] ^= b[(x + 4) % 5] ^ b[(x + 1) % 5].rotl(1);
+	}
+
+	// Rho and Pi functions.
+	t = self.state[1];
+	for (usz x = 0; x < 24; ++x)
+	{
+		b[0] = self.state[PI[x]];
+		self.state[PI[x]] = t.rotl(RHO[x]);
+		t = b[0];
+	}
+
+	// Chi function.
+	for (usz y = 0; y < 25; y += 5)
+	{
+		for (usz x = 0; x < 5; ++x) b[x] = self.state[y + x];
+		for (usz x = 0; x < 5; ++x) self.state[y + x] ^= (~b[(x + 1) % 5]) & b[(x + 2) % 5];
+	}
+
+	// Iota function.
+	self.state[0] ^= RC[round_counter];
+}
+
+macro KeccakContext.@round(&self, $round_counter) @if ($feature(SHA3_UNROLLED))
+{
+	ulong[5] b;
+	ulong t;
+
+	// theta
 	$for var $x = 0; $x < 5; ++$x:
 		b[$x] = 0;
 		$for var $y = 0; $y < 25; $y += 5:
@@ -247,26 +300,24 @@ macro KeccakContext.@round(&self, $round_counter)
 		$endfor
 	$endfor
 
-	// Rho and Pi functions.
-	t = self.state[1];
+	// rho and pi
 	$for var $x = 0; $x < 24; ++$x:
 		b[0] = self.state[PI[$x]];
 		self.state[PI[$x]] = t.rotl(RHO[$x]);
 		t = b[0];
 	$endfor
 
-	// Chi function.
+	// chi
 	$for var $y = 0; $y < 25; $y += 5:
 		$for var $x = 0; $x < 5; ++$x:
 			b[$x] = self.state[$y + $x];
 		$endfor
 		$for var $x = 0; $x < 5; ++$x:
-			// self.state[$y + $x] = b[$x] ^ ((~b[($x + 1) % 5]) & b[($x + 2) % 5]);
 			self.state[$y + $x] ^= (~b[($x + 1) % 5]) & b[($x + 2) % 5];
 		$endfor
 	$endfor
 
-	// Iota function.
+	// iota
 	self.state[0] ^= RC[$round_counter];
 }
 
