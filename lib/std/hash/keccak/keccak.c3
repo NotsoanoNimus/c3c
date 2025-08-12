@@ -35,6 +35,8 @@ const ulong[24] RC = {   // round constants
 	0x8000_0000_8000_8081,  0x8000_0000_0000_8080,  0x0000_0000_8000_0001,  0x8000_0000_8000_8008,
 };
 
+macro @rc($round) @const => RC[$round];
+
 const char[24] RHO = {
 	1,  3,   6, 10, 15, 21,
 	28, 36, 45, 55,  2, 14,
@@ -97,7 +99,7 @@ fn char[OUTPUT_BITS / 8] hash(char[] data)
 fn void KeccakContext.wipe(&self) @inline @if(env::LIBC) => mem::zero_volatile(@as_char_view(*self));
 fn void KeccakContext.wipe(&self) @inline @if(!env::LIBC)
 {
-	for (usz i = 0; i < self.sizeof; ++i) *@unaligned_load(&((char*)self)[i], 1) = 0x00;
+	for (usz i = 0; i < $sizeof(self); ++i) *@unaligned_load(&((char*)self)[i], 1) = 0x00;
 }
 
 
@@ -213,76 +215,26 @@ fn void KeccakContext.squeeze(&self, char[] out) @inline
 macro KeccakContext.@permute(&self) => self.@permute_r(MAX_ROUNDS);
 
 
-macro KeccakContext.@permute_r(&self, rounds) @if (!$feature(SHA3_UNROLLED)) => self.permute_r(rounds);
-fn void KeccakContext.permute_r(&self, usz rounds) @if (!$feature(SHA3_UNROLLED))
+macro KeccakContext.@permute_r(&self, $rounds) => self.permute_r($rounds);
+
+fn void KeccakContext.permute_r(&self, usz rounds)
 {
 	usz i = RC.len - rounds;
 
 	for (; i < RC.len - (RC.len % 3); i += 3)
 	{
-		self.@round(i);
-		self.@round(i + 1);
-		self.@round(i + 2);
+		self.round(RC[i + 0]);
+		self.round(RC[i + 1]);
+		self.round(RC[i + 2]);
 	}
 
-	for (; i < RC.len; ++i) self.@round(i);
-}
-
-macro KeccakContext.@permute_r(&self, $rounds) @if ($feature(SHA3_UNROLLED))
-{
-	var $i = RC.len - $rounds;
-
-	$for ; $i < RC.len - (RC.len % 3); $i += 3:
-		self.@round($i);
-		self.@round($i + 1);
-		self.@round($i + 2);
-	$endfor
-
-	$for ; $i < RC.len; ++$i:
-		self.@round($i);
-	$endfor
+	for (; i < RC.len; ++i) self.round(RC[i]);
 }
 
 
-macro KeccakContext.@round(&self, round_counter) @if (!$feature(SHA3_UNROLLED)) => self.round(round_counter);
-fn void KeccakContext.round(&self, usz round_counter) @if (!$feature(SHA3_UNROLLED))
-{
-	ulong[5] b;
-	ulong t;
+macro KeccakContext.@round(&self, $round_counter) => self.round(@rc($round_counter));
 
-	// Theta function.
-	for (usz x = 0; x < 5; ++x)
-	{
-		b[x] = 0;
-
-		for (usz y = 0; y < 25; y += 5) b[x] ^= self.state[x + y];
-	}
-	for (usz x = 0; x < 5; ++x)
-	{
-		for (usz y = 0; y < 25; y += 5) self.state[x + y] ^= b[(x + 4) % 5] ^ b[(x + 1) % 5].rotl(1);
-	}
-
-	// Rho and Pi functions.
-	t = self.state[1];
-	for (usz x = 0; x < 24; ++x)
-	{
-		b[0] = self.state[PI[x]];
-		self.state[PI[x]] = t.rotl(RHO[x]);
-		t = b[0];
-	}
-
-	// Chi function.
-	for (usz y = 0; y < 25; y += 5)
-	{
-		for (usz x = 0; x < 5; ++x) b[x] = self.state[y + x];
-		for (usz x = 0; x < 5; ++x) self.state[y + x] ^= (~b[(x + 1) % 5]) & b[(x + 2) % 5];
-	}
-
-	// Iota function.
-	self.state[0] ^= RC[round_counter];
-}
-
-macro KeccakContext.@round(&self, $round_counter) @if ($feature(SHA3_UNROLLED))
+fn void KeccakContext.round(&self, usz rc)
 {
 	ulong[5] b;
 	ulong t;
@@ -318,7 +270,7 @@ macro KeccakContext.@round(&self, $round_counter) @if ($feature(SHA3_UNROLLED))
 	$endfor
 
 	// iota
-	self.state[0] ^= RC[$round_counter];
+	self.state[0] ^= rc;
 }
 
 
