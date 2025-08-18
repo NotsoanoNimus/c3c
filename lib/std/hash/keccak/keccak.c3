@@ -35,8 +35,6 @@ const ulong[24] RC = {   // round constants
 	0x8000_0000_8000_8081,  0x8000_0000_0000_8080,  0x0000_0000_8000_0001,  0x8000_0000_8000_8008,
 };
 
-macro @rc($round) @const => RC[$round];
-
 const char[24] RHO = {
 	1,  3,   6, 10, 15, 21,
 	28, 36, 45, 55,  2, 14,
@@ -107,7 +105,7 @@ fn void KeccakContext.fill_block(&self) @inline
 {
 	foreach(j, c : self.buf[:self.offset]) self.state_bytes[j] ^= c;
 
-	self.@permute_r(ROUNDS);
+	self.permute_r(ROUNDS);
 	self.offset = 0;
 }
 
@@ -129,7 +127,7 @@ fn void KeccakContext.absorb(&self, char[] input) @inline
 		{
 			foreach (j, c : self.buf) self.state_bytes[j] ^= c;
 
-			self.@permute_r(ROUNDS);
+			self.permute_r(ROUNDS);
 			self.offset = 0;
 		}
 
@@ -140,7 +138,7 @@ fn void KeccakContext.absorb(&self, char[] input) @inline
 	{
 		foreach (j, c : input[i:RATE]) self.state_bytes[j] ^= c;
 
-		self.@permute_r(ROUNDS);
+		self.permute_r(ROUNDS);
 	}
 
 	usz left = input.len - i;
@@ -156,14 +154,14 @@ fn void KeccakContext.pad(&self) @inline
 
 	if (self.offset == RATE)
 	{
-		self.@permute_r(ROUNDS);
+		self.permute_r(ROUNDS);
 		self.offset = 0;
 	}
 
 	self.state_bytes[self.offset] ^= self.runtime_delimiter;
 	self.state_bytes[RATE - 1] ^= 0x80;
 
-	self.@permute_r(ROUNDS);
+	self.permute_r(ROUNDS);
 	self.offset = 0;
 }
 
@@ -174,7 +172,7 @@ fn void KeccakContext.squeeze(&self, char[] out) @inline
 
 	if (self.offset == RATE)
 	{
-		self.@permute_r(ROUNDS);
+		self.permute_r(ROUNDS);
 	}
 	else if (@unlikely(self.offset > 0))
 	{
@@ -192,7 +190,7 @@ fn void KeccakContext.squeeze(&self, char[] out) @inline
 		{
 			self.offset = 0;
 
-			self.@permute_r(ROUNDS);
+			self.permute_r(ROUNDS);
 		}
 
 		i = left;
@@ -202,7 +200,7 @@ fn void KeccakContext.squeeze(&self, char[] out) @inline
 	{
 		out[i:RATE] = self.state_bytes[:RATE];
 
-		self.@permute_r(ROUNDS);
+		self.permute_r(ROUNDS);
 	}
 
 	usz left = out.len - i;
@@ -211,11 +209,6 @@ fn void KeccakContext.squeeze(&self, char[] out) @inline
 	self.offset = left;
 }
 
-
-macro KeccakContext.@permute(&self) => self.@permute_r(MAX_ROUNDS);
-
-
-macro KeccakContext.@permute_r(&self, $rounds) => self.permute_r($rounds);
 
 fn void KeccakContext.permute_r(&self, usz rounds)
 {
@@ -232,9 +225,7 @@ fn void KeccakContext.permute_r(&self, usz rounds)
 }
 
 
-macro KeccakContext.@round(&self, $round_counter) => self.round(@rc($round_counter));
-
-fn void KeccakContext.round(&self, usz rc)
+fn void KeccakContext.round(&self, ulong rc)
 {
 	ulong[5] b;
 	ulong t;
@@ -253,6 +244,7 @@ fn void KeccakContext.round(&self, usz rc)
 	$endfor
 
 	// rho and pi
+	t = self.state[1];
 	$for var $x = 0; $x < 24; ++$x:
 		b[0] = self.state[PI[$x]];
 		self.state[PI[$x]] = t.rotl(RHO[$x]);

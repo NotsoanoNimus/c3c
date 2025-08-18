@@ -14,10 +14,10 @@ import std::hash::keccak::keccak @public;
 
 fn void keccak_empty()
 {
-	assert(keccak::hash_224("") == x"f71837502ba8e10837bdd8d365adb85591895602fc552b48b7390abd");
-	assert(keccak::hash_256("") == x"c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
-	assert(keccak::hash_384("") == x"2c23146a63a29acf99e73b88f8c24eaa7dc60aa771780ccc006afbfa8fe2479b2dd2b21362337441ac12b515911957ff");
-	assert(keccak::hash_512("") == x"0eab42de4c3ceb9235fc91acffe746b29c29a8c366b7c60e4e67c466f36a4304c00fa9caf9d87976ba469bcbe06713b435f091ef2769fb160cdab33d3670680e");
+	test::eq(keccak::hash_224(""), x"f71837502ba8e10837bdd8d365adb85591895602fc552b48b7390abd");
+	test::eq(keccak::hash_256(""), x"c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
+	test::eq(keccak::hash_384(""), x"2c23146a63a29acf99e73b88f8c24eaa7dc60aa771780ccc006afbfa8fe2479b2dd2b21362337441ac12b515911957ff");
+	test::eq(keccak::hash_512(""), x"0eab42de4c3ceb9235fc91acffe746b29c29a8c366b7c60e4e67c466f36a4304c00fa9caf9d87976ba469bcbe06713b435f091ef2769fb160cdab33d3670680e");
 }
 
 fn void keccak_simple()
@@ -57,10 +57,10 @@ fn void keccak_simple()
 
 	foreach (i, v : tests_common::SIMPLE_VECTORS)
 	{
-		assert(keccak::hash_224(v[..])[..] == expected[i][0][..]);
-		assert(keccak::hash_256(v[..])[..] == expected[i][1][..]);
-		assert(keccak::hash_384(v[..])[..] == expected[i][2][..]);
-		assert(keccak::hash_512(v[..])[..] == expected[i][3][..]);
+		test::eq(keccak::hash_224(v[..])[..], expected[i][0][..]);
+		test::eq(keccak::hash_256(v[..])[..], expected[i][1][..]);
+		test::eq(keccak::hash_384(v[..])[..], expected[i][2][..]);
+		test::eq(keccak::hash_512(v[..])[..], expected[i][3][..]);
 	}
 }
 
@@ -104,10 +104,10 @@ fn void keccak_interval()
 	// 'a'-array of lengths [1, 65, 129, 193, 257]
 	for (usz i = 1, usz j = 0; i <= 257; i += 64, ++j)
 	{
-		assert(keccak::hash_224(x[:i])[..] == expected[j][0], "224: Failed on length %d.", i);
-		assert(keccak::hash_256(x[:i])[..] == expected[j][1], "256: Failed on length %d.", i);
-		assert(keccak::hash_384(x[:i])[..] == expected[j][2], "384: Failed on length %d.", i);
-		assert(keccak::hash_512(x[:i])[..] == expected[j][3], "512: Failed on length %d.", i);
+		test::@check(keccak::hash_224(x[:i])[..] == expected[j][0], "224: Failed on length %d.", i);
+		test::@check(keccak::hash_256(x[:i])[..] == expected[j][1], "256: Failed on length %d.", i);
+		test::@check(keccak::hash_384(x[:i])[..] == expected[j][2], "384: Failed on length %d.", i);
+		test::@check(keccak::hash_512(x[:i])[..] == expected[j][3], "512: Failed on length %d.", i);
 	}
 }
 
@@ -125,10 +125,10 @@ fn void keccak_streamed()
 	k3.update(s[:20]); k3.update(s[20:10]); k3.update(s[30:1]); k3.update(s[31..]); 
 	k4.update(s[:20]); k4.update(s[20:10]); k4.update(s[30:1]); k4.update(s[31..]); 
 
-	assert(k1.final() == x"c1db269e17762c0cb49f90e8c707a5a07bc8ef916a5be614b9025dcd", "Keccak224: bad stream hash");
-	assert(k2.final() == x"1b3448bae1bf51f295092abf1ab79f0691e519cbd4a3cd9c748ed1c766748609", "Keccak256: bad stream hash");
-	assert(k3.final() == x"b36318ba1ed978d9df23f615958967c0b91d35039f02831dee289055f9fe0a4f6aa1118942b073b1b81f43bc4f2fd4a5", "Keccak384: bad stream hash");
-	assert(k4.final() == x"9ab3c2bd4f3d410e717f8f43ce0842ebb432a5d9bb9e669c95728694e25c3cf3e432a99717187c00ecc89a68dc77fd319c17d085bcc21a7a1104ce1c1e309eda", "Keccak512: bad stream hash");
+	test::eq(k1.final(), x"c1db269e17762c0cb49f90e8c707a5a07bc8ef916a5be614b9025dcd");
+	test::eq(k2.final(), x"1b3448bae1bf51f295092abf1ab79f0691e519cbd4a3cd9c748ed1c766748609");
+	test::eq(k3.final(), x"b36318ba1ed978d9df23f615958967c0b91d35039f02831dee289055f9fe0a4f6aa1118942b073b1b81f43bc4f2fd4a5");
+	test::eq(k4.final(), x"9ab3c2bd4f3d410e717f8f43ce0842ebb432a5d9bb9e669c95728694e25c3cf3e432a99717187c00ecc89a68dc77fd319c17d085bcc21a7a1104ce1c1e309eda");
 }
 
 fn void keccak_thicc() @if($feature(SLOW_TESTS)) => @pool()
@@ -142,8 +142,8 @@ fn void keccak_thicc() @if($feature(SLOW_TESTS)) => @pool()
 		x"0205f85e8582df3925f7bb07ce96929a5816f23b8488de44bb6bd6dec3b5a43cf23128e58afee46151c1a758c611b404e32dca58815d2ed045558adee420f6df",
 	};
 
-	assert(keccak::hash_224(bigboi[..])[..] == expected[0], "Incorrect Keccak224");
-	assert(keccak::hash_256(bigboi[..])[..] == expected[1], "Incorrect Keccak256");
-	assert(keccak::hash_384(bigboi[..])[..] == expected[2], "Incorrect Keccak384");
-	assert(keccak::hash_512(bigboi[..])[..] == expected[3], "Incorrect Keccak512");
+	test::eq(keccak::hash_224(bigboi[..])[..], expected[0]);
+	test::eq(keccak::hash_256(bigboi[..])[..], expected[1]);
+	test::eq(keccak::hash_384(bigboi[..])[..], expected[2]);
+	test::eq(keccak::hash_512(bigboi[..])[..], expected[3]);
 }
