@@ -143,8 +143,8 @@ static bool sema_binary_is_expr_lvalue(SemaContext *context, Expr *top_expr, Exp
 static void sema_binary_unify_voidptr(Expr *left, Expr *right, Type **left_type_ref, Type **right_type_ref);
 
 // -- function helper functions
-static inline bool sema_expr_analyse_var_call(SemaContext *context, Expr *expr, Type *func_ptr_type,
-											  bool optional, bool *no_match_ref);
+static inline bool sema_expr_analyse_var_call(SemaContext *context, Expr *expr, Expr *var,
+                                              Type *func_ptr_type, bool optional,bool *no_match_ref);
 static inline bool sema_expr_analyse_func_call(SemaContext *context, Expr *expr, Decl *decl,
 											   Expr *struct_var, bool optional, bool *no_match_ref);
 
@@ -2135,6 +2135,7 @@ NEXT_FLAG:
 				c = data[i];
 				if (++idx == vacount) goto TOO_FEW_ARGUMENTS;
 				expr = vaargs[idx];
+				type = sema_get_va_type(context, expr, variadic);
 				if (!type_ok(type)) return false;
 			}
 			else
@@ -2385,7 +2386,7 @@ SKIP_CONTRACTS:
 	return true;
 }
 
-static inline bool sema_expr_analyse_var_call(SemaContext *context, Expr *expr, Type *func_ptr_type, bool optional, bool *no_match_ref)
+static inline bool sema_expr_analyse_var_call(SemaContext *context, Expr *expr, Expr *var, Type *func_ptr_type, bool optional,bool *no_match_ref)
 {
 	func_ptr_type = type_flat_distinct_inline(func_ptr_type);
 	if (func_ptr_type->type_kind != TYPE_FUNC_PTR)
@@ -2397,6 +2398,10 @@ static inline bool sema_expr_analyse_var_call(SemaContext *context, Expr *expr, 
 		}
 		RETURN_SEMA_ERROR(expr, "Only macros, functions and function pointers may be invoked, this is of type '%s'.",
 						  type_to_error_string(func_ptr_type));
+	}
+	if (sema_cast_const(var) && expr_is_const_pointer(var) && var->const_expr.ptr == 0)
+	{
+		RETURN_SEMA_ERROR(var, "You cannot call a null function pointer.");
 	}
 	Type *pointee = func_ptr_type->pointer;
 	expr->call_expr.is_pointer_call = true;
@@ -2577,7 +2582,6 @@ bool sema_expr_analyse_macro_call(SemaContext *context, Expr *call_expr, Expr *s
 			goto SKIP_LINK;
 		}
 		Decl *func = context->call_env.current_function;
-		ASSERT_SPAN(func, func);
 		ASSERT_SPAN(func, func->resolved_attributes);
 		if (!func->attrs_resolved)
 		{
@@ -2772,7 +2776,7 @@ bool sema_expr_analyse_macro_call(SemaContext *context, Expr *call_expr, Expr *s
 		if (param->var.init_expr)
 		{
 			Type *param_type = param->type;
-			if (param_type && (param->var.out_param || param->var.not_null))
+			if (param_type && param->var.type_info && (param->var.out_param || param->var.not_null))
 			{
 				param_type = type_flatten(param_type);
 				if (param_type->type_kind != TYPE_POINTER && param_type->type_kind != TYPE_SLICE && param_type->type_kind != TYPE_INTERFACE && param_type->type_kind != TYPE_ANY)
@@ -2781,7 +2785,7 @@ bool sema_expr_analyse_macro_call(SemaContext *context, Expr *call_expr, Expr *s
 					goto EXIT_FAIL;
 				}
 			}
-			if (param->var.not_null)
+			if (param->var.not_null && (param_type->type_kind == TYPE_POINTER || param_type->type_kind == TYPE_SLICE || param_type->type_kind == TYPE_INTERFACE || param_type->type_kind == TYPE_ANY))
 			{
 				Expr *expr = expr_variable(param);
 				Expr *binary = expr_new_expr(EXPR_BINARY, expr);
@@ -3129,9 +3133,9 @@ bool sema_expr_analyse_general_call(SemaContext *context, Expr *expr, Decl *decl
 	expr->call_expr.is_type_method = struct_var != NULL;
 	if (decl == NULL)
 	{
-		return sema_expr_analyse_var_call(context, expr,
-										  type_flatten(exprptr(expr->call_expr.function)->type), optional,
-										  no_match_ref);
+		Expr *var = exprptr(expr->call_expr.function);
+		return sema_expr_analyse_var_call(context, expr, var, type_flatten(var->type),
+		                                  optional, no_match_ref);
 	}
 	if (!sema_analyse_decl(context, decl)) return false;
 	switch (decl->decl_kind)
@@ -3141,9 +3145,14 @@ bool sema_expr_analyse_general_call(SemaContext *context, Expr *expr, Decl *decl
 			expr->call_expr.is_func_ref = true;
 			return sema_expr_analyse_macro_call(context, expr, struct_var, decl, optional, no_match_ref);
 		case DECL_VAR:
+		{
 			ASSERT_SPAN(expr, struct_var == NULL);
-			return sema_expr_analyse_var_call(context, expr, decl->type->canonical, optional || IS_OPTIONAL(decl),
-											  no_match_ref);
+			Expr *var = exprptr(expr->call_expr.function);
+			ASSERT_SPAN(expr, var);
+			return sema_expr_analyse_var_call(context, expr, var, decl->type->canonical,
+											  optional || IS_OPTIONAL(decl), no_match_ref);
+
+		}
 		case DECL_FUNC:
 			expr->call_expr.func_ref = declid(decl);
 			expr->call_expr.is_func_ref = true;
@@ -3615,7 +3624,7 @@ static Expr *sema_expr_find_subscript_type_or_overload_for_subscript(SemaContext
                                                                      Decl **overload_ptr)
 {
 	Decl *overload = NULL;
-	overload = sema_find_untyped_operator(context, current_expr->type, overload_type, NULL);
+	overload = sema_find_untyped_operator(current_expr->type, overload_type, NULL);
 	if (overload)
 	{
 		// Overload for []=
@@ -3719,7 +3728,7 @@ static inline bool sema_expr_resolve_subscript_index(SemaContext *context, Expr 
 	ArrayIndex size;
 	bool check_len = !context->call_env.in_no_eval || current_type == type_untypedlist;
 	Expr *len_expr = current_expr->expr_kind == EXPR_CT_IDENT ? current_expr->ct_ident_expr.decl->var.init_expr : current_expr;
-	if (check_len && expr_is_const_int(index) && (size = sema_len_from_expr(len_expr)) >= 0)
+	if (expr_is_const_int(index) && (size = sema_len_from_expr(len_expr)) >= 0)
 	{
 		// 4c. And that it's in range.
 		if (int_is_neg(index->const_expr.ixx))
@@ -3729,6 +3738,11 @@ static inline bool sema_expr_resolve_subscript_index(SemaContext *context, Expr 
 		}
 		if (!int_fits(index->const_expr.ixx, TYPE_I64) || size == 0)
 		{
+			if (!check_len)
+			{
+				index_value = -1;
+				goto SKIP;
+			}
 			if (check_valid) return false;
 			RETURN_SEMA_ERROR(index, "The index is out of range.", size);
 		}
@@ -3739,6 +3753,11 @@ static inline bool sema_expr_resolve_subscript_index(SemaContext *context, Expr 
 		}
 		if (index_value < 0 || index_value >= size)
 		{
+			if (!check_len)
+			{
+				index_value = -1;
+				goto SKIP;
+			}
 			if (check_valid) return false;
 			if (start_from_end)
 			{
@@ -3757,6 +3776,7 @@ static inline bool sema_expr_resolve_subscript_index(SemaContext *context, Expr 
 			                  (long long) size - 1);
 		}
 	}
+SKIP:
 	*index_ref = index_value;
 	*current_type_ref = current_type;
 	*current_expr_ref = current_expr;
@@ -3821,7 +3841,7 @@ static inline bool sema_expr_analyse_subscript_lvalue(SemaContext *context, Expr
 	{
 		if (start_from_end)
 		{
-			Decl *len = sema_find_untyped_operator(context, current_expr->type, OVERLOAD_LEN, NULL);
+			Decl *len = sema_find_untyped_operator(current_expr->type, OVERLOAD_LEN, NULL);
 			if (!len)
 			{
 				if (check_valid) goto VALID_FAIL_POISON;
@@ -3936,7 +3956,7 @@ static inline bool sema_expr_analyse_subscript(SemaContext *context, Expr *expr,
 	{
 		if (start_from_end)
 		{
-			Decl *len = sema_find_untyped_operator(context, current_expr->type, OVERLOAD_LEN, NULL);
+			Decl *len = sema_find_untyped_operator(current_expr->type, OVERLOAD_LEN, NULL);
 			if (!len)
 			{
 				if (check_valid) goto VALID_FAIL_POISON;
@@ -4305,6 +4325,7 @@ static inline bool sema_slice_initializer(SemaContext *context, Expr *expr, Expr
 					elements--;
 					i--;
 				}
+				element->init_array_value.index -= range->start_index;
 			}
 			if (vec_size(initializer->init_array.elements) == 0)
 			{
@@ -4608,35 +4629,6 @@ static inline bool sema_analyse_macro_func_access(SemaContext *context, Expr *ex
 	return sema_expr_analyse_type_access(context, expr, parent->type, identifier, missing_ref);
 }
 
-static inline Decl *sema_check_for_type_method(SemaContext *context, Expr *expr, Type *parent_type, const char *name, bool *missing_ref)
-{
-	ASSERT(parent_type == parent_type->canonical);
-	Decl *ambiguous = NULL;
-	Decl *private = NULL;
-	Decl *member = sema_resolve_type_method(context->unit, parent_type, name, &ambiguous, &private);
-	if (private)
-	{
-		if (missing_ref)
-		{
-			*missing_ref = true;
-		}
-		else
-		{
-			SEMA_ERROR(expr, "The method '%s' has private visibility.", name);
-		}
-
-		return poisoned_decl;
-	}
-	if (ambiguous)
-	{
-		SEMA_ERROR(expr, "'%s' is an ambiguous name and so cannot be resolved, "
-		                 "it may refer to method defined in '%s' or one in '%s'",
-		           name, member->unit->module->name->module, ambiguous->unit->module->name->module);
-		return poisoned_decl;
-	}
-	return member;
-}
-
 static inline bool sema_expr_analyse_type_access(SemaContext *context, Expr *expr, Type *parent_type, Expr *identifier, bool *missing_ref)
 {
 	ASSERT_SPAN(expr, identifier->expr_kind == EXPR_UNRESOLVED_IDENTIFIER);
@@ -4655,7 +4647,7 @@ static inline bool sema_expr_analyse_type_access(SemaContext *context, Expr *exp
 
 	if (!type_may_have_sub_elements(canonical))
 	{
-		Decl *member = sema_check_for_type_method(context, expr, parent_type->canonical, name, missing_ref);
+		Decl *member = sema_resolve_type_method(context, parent_type->canonical, name);
 		if (!decl_ok(member)) return false;
 		if (!member)
 		{
@@ -4693,11 +4685,11 @@ static inline bool sema_expr_analyse_type_access(SemaContext *context, Expr *exp
 			UNREACHABLE
 	}
 
-	Decl *member = sema_decl_stack_find_decl_member(context, decl, name, METHODS_AND_FIELDS);
+	Decl *member = sema_decl_stack_find_decl_member(context, decl, name, FIELDS_ONLY);
 	if (!decl_ok(member)) return false;
 	if (!member)
 	{
-		member = sema_check_for_type_method(context, expr, decl->type, name, missing_ref);
+		member = sema_resolve_type_method(context, decl->type, name);
 		if (!decl_ok(member)) return false;
 	}
 	if (!member)
@@ -5179,12 +5171,13 @@ CONTINUE:
 			sema_append_interface_methods(decl, &method_exprs, expr->span);
 		}
 		// Look through natively defined methods.
-		append_to_method_list(decl->methods, &method_exprs, expr->span);
+		Methods *methods = decl->method_table;
+		if (methods) append_to_method_list(methods->methods, &method_exprs, expr->span);
 	}
-	append_extension_methods(type, context->unit->local_method_extensions, &method_exprs, expr->span);
-	append_extension_methods(type, context->unit->module->private_method_extensions, &method_exprs, expr->span);
-	append_extension_methods(type, compiler.context.method_extensions, &method_exprs, expr->span);
-
+	else
+	{
+		append_extension_methods(type, compiler.context.method_extension_list, &method_exprs, expr->span);
+	}
 	type = type_find_parent_type(type);
 	if (type) goto CONTINUE;
 	expr_rewrite_const_untyped_list(expr, method_exprs);
@@ -5598,7 +5591,19 @@ static bool sema_expr_rewrite_to_type_property(SemaContext *context, Expr *expr,
 			expr_rewrite_const_bool(expr, type_bool, type_is_ordered(flat));
 			return true;
 		case TYPE_PROPERTY_IS_EQ:
-			expr_rewrite_const_bool(expr, type_bool, type_is_comparable(flat));
+			if (type_is_comparable(flat))
+			{
+				expr_rewrite_const_bool(expr, type_bool, type_is_comparable(flat));
+				return true;
+			}
+			if (type_is_user_defined(type))
+			{
+				BoolErr res = sema_type_has_equality_overload(context, type);
+				if (res == BOOL_ERR) return false;
+				expr_rewrite_const_bool(expr, type_bool, res == BOOL_TRUE);
+				return true;
+			}
+			expr_rewrite_const_bool(expr, type_bool, false);
 			return true;
 		case TYPE_PROPERTY_IS_SUBSTRUCT:
 			expr_rewrite_const_bool(expr, type_bool, type_is_substruct(flat));
@@ -6103,20 +6108,7 @@ CHECK_DEEPER:
 	// 9. At this point we may only have distinct, struct, union, error, enum, interface
 	if (!type_may_have_sub_elements(type))
 	{
-		Decl *ambiguous = NULL;
-		Decl *private = NULL;
-		Decl *method = sema_resolve_type_method(context->unit, type, kw, &ambiguous, &private);
-		if (private)
-		{
-			if (missing_ref) goto MISSING_REF;
-			RETURN_SEMA_ERROR(expr, "The method '%s' has private visibility.", kw);
-		}
-		if (ambiguous)
-		{
-			RETURN_SEMA_ERROR(expr, "'%s' is an ambiguous name and so cannot be resolved, "
-									"it may refer to method defined in '%s' or one in '%s'",
-									kw, method->unit->module->name->module, ambiguous->unit->module->name->module);
-		}
+		Decl *method = sema_resolve_type_method(context, type, kw);
 		if (!method)
 		{
 			if (missing_ref) goto MISSING_REF;
@@ -6134,7 +6126,7 @@ CHECK_DEEPER:
 	// 10. Dump all members and methods into a decl stack.
 	Decl *decl = type->decl;
 
-	Decl *member = sema_decl_stack_find_decl_member(context, decl, kw, METHODS_AND_FIELDS);
+	Decl *member = sema_decl_stack_find_decl_member(context, decl, kw, METHODS_INTERFACES_AND_FIELDS);
 	if (!decl_ok(member)) return false;
 
 	if (member && decl->decl_kind == DECL_ENUM && member->decl_kind == DECL_VAR && sema_cast_const(parent))
@@ -6149,24 +6141,22 @@ CHECK_DEEPER:
 		return true;
 	}
 	Decl *private = NULL;
-	if (!member)
+	if (!member && decl->decl_kind == DECL_INTERFACE)
 	{
-		Decl *ambiguous = NULL;
-		member = sema_resolve_method(context->unit, decl, kw, &ambiguous, &private);
-		// Look at interface parents
-		if (!member && decl->decl_kind == DECL_INTERFACE)
+		Decl *inf;
+		FOREACH(TypeInfo *, parent_interface, decl->interfaces)
 		{
-			FOREACH(TypeInfo *, parent_interface, decl->interfaces)
+			if (!sema_resolve_type_info(context, parent_interface, RESOLVE_TYPE_NO_CHECK_DISTINCT)) return false;
+			Decl *parent_decl = parent_interface->type->decl;
+			Decl *value = sema_resolve_method(parent_decl, kw);
+			if (value && member)
 			{
-				member = sema_resolve_method(context->unit, parent_interface->type->decl, kw, &ambiguous, &private);
-				if (member) break;
+				RETURN_SEMA_ERROR(expr, "Ambiguous method '%s' on '%s', it was implemented on both '%s' and '%s'.", kw,
+					type_to_error_string(parent->type),
+					inf->name, parent_decl->name);
 			}
-		}
-		if (ambiguous)
-		{
-			ASSERT(member);
-			RETURN_SEMA_ERROR(expr, "'%s' is an ambiguous name and so cannot be resolved, it may refer to method defined in '%s' or one in '%s'",
-					   kw, member->unit->module->name->module, ambiguous->unit->module->name->module);
+			member = value;
+			inf = parent_decl;
 		}
 	}
 
@@ -6850,7 +6840,7 @@ INLINE bool sema_rewrite_op_assign(SemaContext *context, Expr *expr, Expr *left,
 	{
 		Expr *parent = exprptr(left->subscript_assign_expr.expr);
 		Type *parent_type = type_no_optional(parent->type)->canonical;
-		Decl *operator = sema_find_untyped_operator(context, parent_type, OVERLOAD_ELEMENT_REF, NULL);
+		Decl *operator = sema_find_untyped_operator(parent_type, OVERLOAD_ELEMENT_REF, NULL);
 		Expr *index = exprptr(left->subscript_assign_expr.index);
 		if (operator)
 		{
@@ -6860,7 +6850,7 @@ INLINE bool sema_rewrite_op_assign(SemaContext *context, Expr *expr, Expr *left,
 			goto AFTER_ADDR;
 		}
 		// If we only have []=, then we need []
-		operator = sema_find_untyped_operator(context, parent_type, OVERLOAD_ELEMENT_AT, NULL);
+		operator = sema_find_untyped_operator(parent_type, OVERLOAD_ELEMENT_AT, NULL);
 		if (!operator)
 		{
 			RETURN_SEMA_ERROR(left, "There is no overload for [] for %s.", type_quoted_error_string(type_no_optional(left->type)));
@@ -7327,9 +7317,7 @@ static bool sema_expr_analyse_enum_add_sub(SemaContext *context, Expr *expr, Exp
 		Decl **enums = left_type->decl->enums.values;
 		if (int_is_neg(i) || int_ucomp(i, vec_size(enums), BINARYOP_GE))
 		{
-			SEMA_ERROR(expr, "This does not result in a valid enum. If you want to do the %s, cast the enum to an integer.",
-					   is_sub ? "subtraction" : "addition");
-			return false;
+			RETURN_SEMA_ERROR(expr, "This does not result in a valid enum. If you want to do the %s, cast the enum to an integer.", is_sub ? "subtraction" : "addition");
 		}
 		ASSERT_SPAN(expr, left_type->decl->resolve_status == RESOLVE_DONE);
 		expr->const_expr = (ExprConst) { .const_kind = CONST_ENUM, .enum_val = enums[int_to_i64(i)] };
@@ -8045,6 +8033,29 @@ static bool sema_binary_is_unsigned_always_same_comparison(SemaContext *context,
 
 }
 
+BoolErr sema_type_has_equality_overload(SemaContext *context, CanonicalType *type)
+{
+	assert(type->canonical == type);
+	Decl *candidate = NULL;
+	Decl *ambiguous = NULL;
+	OverloadMatch match = sema_find_typed_operator_type(context, OVERLOAD_EQUAL, OVERLOAD_TYPE_LEFT, type, type, NULL, &candidate, OVERLOAD_MATCH_NONE, &ambiguous);
+	if (match == OVERLOAD_MATCH_NONE) match = sema_find_typed_operator_type(context, OVERLOAD_NOT_EQUAL, OVERLOAD_TYPE_LEFT, type, type, NULL, &candidate, OVERLOAD_MATCH_NONE, &ambiguous);
+	switch (match)
+	{
+		case OVERLOAD_MATCH_ERROR:
+			return BOOL_ERR;
+		case OVERLOAD_MATCH_EXACT:
+		case OVERLOAD_MATCH_WILDCARD:
+		case OVERLOAD_MATCH_CONVERSION:
+			return BOOL_TRUE;
+		case OVERLOAD_MATCH_NONE:
+		case OVERLOAD_MATCH_AMBIGUOUS_WILDCARD:
+		case OVERLOAD_MATCH_AMBIGUOUS_CONVERSION:
+		case OVERLOAD_MATCH_AMBIGUOUS_EXACT:
+			return BOOL_FALSE;
+	}
+	UNREACHABLE
+}
 /**
  * Analyze a == b, a != b, a > b, a < b, a >= b, a <= b
  * @return
@@ -8482,7 +8493,7 @@ static inline bool sema_expr_analyse_neg_plus(SemaContext *context, Expr *expr)
 	// Check for overload
 	if (type_is_user_defined(canonical))
 	{
-		Decl *overload = sema_find_untyped_operator(context, canonical, OVERLOAD_UNARY_MINUS, NULL);
+		Decl *overload = sema_find_untyped_operator(canonical, OVERLOAD_UNARY_MINUS, NULL);
 		if (overload)
 		{
 			// Plus just returns inner
@@ -8558,7 +8569,7 @@ static inline bool sema_expr_analyse_bit_not(SemaContext *context, Expr *expr, b
 
 	if (type_is_user_defined(canonical) && canonical->type_kind != TYPE_BITSTRUCT)
 	{
-		Decl *overload = sema_find_untyped_operator(context, canonical, OVERLOAD_NEGATE, NULL);
+		Decl *overload = sema_find_untyped_operator(canonical, OVERLOAD_NEGATE, NULL);
 		if (overload) return sema_insert_method_call(context, expr, overload, inner, NULL, false);
 	}
 
@@ -8734,7 +8745,7 @@ static bool sema_analyse_assign_mutate_overloaded_subscript(SemaContext *context
 {
 	Expr *increased = exprptr(subscript_expr->subscript_assign_expr.expr);
 	Type *type_check = increased->type->canonical;
-	Decl *operator = sema_find_untyped_operator(context, type_check, OVERLOAD_ELEMENT_REF, NULL);
+	Decl *operator = sema_find_untyped_operator(type_check, OVERLOAD_ELEMENT_REF, NULL);
 	Expr **args = NULL;
 	// The simple case: we have &[] so just replace it by that.
 	if (operator)
@@ -8746,7 +8757,7 @@ static bool sema_analyse_assign_mutate_overloaded_subscript(SemaContext *context
 		return true;
 	}
 	// We need []= and [] now.
-	operator = sema_find_untyped_operator(context, type_check, OVERLOAD_ELEMENT_AT, NULL);
+	operator = sema_find_untyped_operator(type_check, OVERLOAD_ELEMENT_AT, NULL);
 	if (!operator)
 	{
 		RETURN_SEMA_ERROR(main, "There is no overload for [] for %s.", type_quoted_error_string(increased->type));
@@ -9569,15 +9580,6 @@ static inline bool sema_expr_analyse_decl_element(SemaContext *context, Designat
 	if (!decl_ok(member)) return false;
 	if (!member)
 	{
-		Decl *ambiguous = NULL;
-		Decl *private = NULL;
-		member = sema_resolve_method(context->unit, actual_type->decl, kw, &ambiguous, &private);
-		if (ambiguous)
-		{
-			sema_error_at(context, loc, "'%s' is an ambiguous name and so cannot be resolved, it may refer to method defined in '%s' or one in '%s'",
-					   kw, member->unit->module->name->module, ambiguous->unit->module->name->module);
-			return false;
-		}
 		if (is_missing)
 		{
 			*is_missing = true;
@@ -11743,10 +11745,15 @@ TokenType sema_splitpathref(const char *string, ArraySize len, Path **path_ref, 
 	}
 }
 
+
+/*
+ * Rewrite an expression into an expression call.
+ */
 bool sema_insert_method_call(SemaContext *context, Expr *method_call, Decl *method_decl, Expr *parent, Expr **arguments, bool reverse_overload)
 {
 	SourceSpan original_span = method_call->span;
 	Expr *resolve = method_call;
+	// In this case we need to resolve the second argument first.
 	if (reverse_overload)
 	{
 		if (!expr_is_const(parent))
