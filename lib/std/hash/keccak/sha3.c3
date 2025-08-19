@@ -5,38 +5,28 @@
 <*
 @require values::@is_int(HASH_BITS) : `HASH_BITS must be an integer type.`
 *>
-module std::hash::keccak::sha3_internal { HASH_BITS } @private;
-
-import std::hash::keccak::keccak_internal @public;
-
-const HASH_BYTES = HASH_BITS / 8;
-
-alias Sha3Context = KeccakContext { 1600, HASH_BITS, 24, 0x06 };   // FIPS-202 defines these constants for SHA-3
-
-fn char[HASH_BYTES] hash(char[] data) => keccak_internal::hash{ 1600, HASH_BITS, 24, 0x06 }(data);
-// fn char[HASH_BYTES] hash(char[] data)
-// {
-//     char[HASH_BYTES] result;
-
-//     keccak_internal::hash{ 1600, HASH_BITS, 24, 0x06 }(data, result[..]);
-
-//     return result;
-// }
-
-
 module std::hash::keccak::sha3;
 
-import std::hash::keccak::sha3_internal @public;
+import std::hash::keccak::keccak;
+import std::hash::keccak::keccak_internal @public;
 
-alias Sha3_224 = Sha3Context { 224 };
-alias hash_224 = sha3_internal::hash { 224 };
+macro typeid sha3($security_level) @local @const
+{
+    return (KeccakContext { 1600, $security_level, 24, 0x06 }).typeid;
+}
 
-alias Sha3_256 = Sha3Context { 256 };
-alias hash_256 = sha3_internal::hash { 256 };
+macro char[*] hash($security_level, char[] data) @local
+{
+    return keccak::explicit_hash($security_level, 0x06, $security_level / 8, data);
+}
 
-alias Sha3_384 = Sha3Context { 384 };
-alias hash_384 = sha3_internal::hash { 384 };
+alias Sha3_224 = $typefrom(sha3(224));
+alias Sha3_256 = $typefrom(sha3(256));
+alias Sha3_384 = $typefrom(sha3(384));
+alias Sha3_512 = $typefrom(sha3(512));
 
-alias Sha3_512 = Sha3Context { 512 };
-alias hash_512 = sha3_internal::hash { 512 };
+fn char[224/8] hash_224(char[] data) => hash(224, data) @inline;
+fn char[256/8] hash_256(char[] data) => hash(256, data) @inline;
+fn char[384/8] hash_384(char[] data) => hash(384, data) @inline;
+fn char[512/8] hash_512(char[] data) => hash(512, data) @inline;
 

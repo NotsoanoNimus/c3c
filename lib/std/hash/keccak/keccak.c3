@@ -93,12 +93,18 @@ fn char[OUTPUT_BITS / 8] hash(char[] data)
     return k.final();
 }
 
-
-fn void KeccakContext.wipe(&self) @inline @if(env::LIBC) => mem::zero_volatile(@as_char_view(*self));
-fn void KeccakContext.wipe(&self) @inline @if(!env::LIBC)
+fn void hash_into(char[] data, char[] into)
 {
-	for (usz i = 0; i < $sizeof(self); ++i) *@unaligned_load(&((char*)self)[i], 1) = 0x00;
+	KeccakContext k @noinit;
+	defer k.wipe();
+	k.init();
+	k.update(data);
+	k.pad();
+	k.squeeze(into);
 }
+
+
+fn void KeccakContext.wipe(&self) @inline => mem::zero_volatile(@as_char_view(*self));
 
 
 fn void KeccakContext.fill_block(&self) @inline
@@ -271,14 +277,34 @@ module std::hash::keccak::keccak;
 
 import std::hash::keccak::keccak_internal @public;
 
-alias Keccak224 = KeccakContext { 1600, 224, 24, 0x01 };
-alias hash_224 = keccak_internal::hash { 1600, 224, 24, 0x01 };
+macro keccak($security_level) @local @const
+{
+	return (KeccakContext { 1600, $security_level, 24, 0x01 }).typeid;
+}
 
-alias Keccak256 = KeccakContext { 1600, 256, 24, 0x01 };
-alias hash_256 = keccak_internal::hash { 1600, 256, 24, 0x01 };
+macro char[*] hash($security_level, char[] data, $outlen_bytes = 0)
+{
+	$if 0 == $outlen_bytes:
+		$outlen_bytes = $security_level / 8;
+	$endif
+	char[$outlen_bytes] result;
+	keccak_internal::hash_into { 1600, $security_level, 24, 0x01 }(data, result[..]);
+	return result;
+}
 
-alias Keccak384 = KeccakContext { 1600, 384, 24, 0x01 };
-alias hash_384 = keccak_internal::hash { 1600, 384, 24, 0x01 };
+macro char[*] explicit_hash($security_level, $delimiter, $outlen_bytes, char[] data, $f = 1600, $rounds = 24)
+{
+	char[$outlen_bytes] result;
+	keccak_internal::hash_into { $f, $security_level, $rounds, $delimiter }(data, result[..]);
+	return result[..];
+}
 
-alias Keccak512 = KeccakContext { 1600, 512, 24, 0x01 };
-alias hash_512 = keccak_internal::hash { 1600, 512, 24, 0x01 };
+alias Keccak224 = $typefrom(keccak(224));
+alias Keccak256 = $typefrom(keccak(256));
+alias Keccak384 = $typefrom(keccak(384));
+alias Keccak512 = $typefrom(keccak(512));
+
+fn char[224/8] hash_224(char[] data) => hash(224, data) @inline;
+fn char[256/8] hash_256(char[] data) => hash(256, data) @inline;
+fn char[384/8] hash_384(char[] data) => hash(384, data) @inline;
+fn char[512/8] hash_512(char[] data) => hash(512, data) @inline;

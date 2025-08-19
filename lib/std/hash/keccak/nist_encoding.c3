@@ -47,6 +47,7 @@ macro char[] @ct_encode_length(NistEncodingType $direction, usz $length) @const
     return $buf[:$len];
 }
 
+
 macro char[] encode_length(NistEncodingType $direction, usz length)
 {
     char[usz.sizeof + 1] buf;
