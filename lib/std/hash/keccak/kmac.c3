@@ -9,19 +9,23 @@
 *>
 module std::hash::keccak::kmac_internal { SECURITY_LEVEL } @private;
 
-import std::hash::keccak::cshake_p, std::hash::keccak::cshake_common;
+import std::hash::keccak::cshake_common;
+import std::hash::keccak::keccak;
+import std::hash::keccak::cshake;
 import std::hash::keccak::nist @public;
+
+const RATE = keccak::rate(SECURITY_LEVEL);
 
 struct KmacContext
 {
-    inline CShake { SECURITY_LEVEL } c;
+    inline $typefrom(cshake::cshake(SECURITY_LEVEL)) c;
 }
 
 fn void KmacContext.init(&self, char[] key, String optional_customization = "")
 {
     self.c.init(KMAC, optional_customization);
 
-    self.c.update(nist::@ct_encode_length(NistEncodingType.LEFT, cshake_p::RATE { SECURITY_LEVEL } / 8));
+    self.c.update(nist::@ct_encode_length(NistEncodingType.LEFT, RATE / 8));
 
     self.c.update(nist::encode_length(NistEncodingType.LEFT, key.len));
     self.c.update(key);
@@ -41,41 +45,32 @@ macro void KmacContext.final(&self, char[] out)
     self.c.squeeze(out[..]);
 }
 
-macro void hash_into(char[] key, char[] data, char[] into, String optional_customization = "")
-{
-    KmacContext c;
-    defer c.wipe();
-    c.init(key, optional_customization);
-    c.update(data);
-    c.final(into[..]);
-}
-
-macro char[*] @hash($outlen_bytes, char[] key, char[] data, String optional_customization = "")
-{
-    char[$outlen_bytes] result;
-
-    hash_into(key, data, result[..], optional_customization);
-
-    return result;
-}
-
 
 // Names for the KMAC structures are a bit 
 module std::hash::keccak::kmac;
 
 import std::hash::keccak::kmac_internal @public;
 
-alias Kmac128 = KmacContext { 128 };
-alias @hash_128 = kmac_internal::@hash { 128 };
-
-alias Kmac256 = KmacContext { 256 };
-alias @hash_256 = kmac_internal::@hash { 256 };
-
-<*
-@require $security_level == 128 ||| $security_level == 256 : `The security level for SHAKE must be 128 or 256.`
-@require $outlen_bytes > 0 : `Output length must be greater than zero.`
-*>
-macro char[*] @hash($security_level, $outlen_bytes, char[] key, char[] data, String optional_customization = "")
+macro typeid kmac($security_level) @const
 {
-    return kmac_internal::@hash{ $security_level }($outlen_bytes, key, data, optional_customization);
+    return (KmacContext { $security_level }).typeid;
 }
+
+macro char[*] xof($security_level, $outlen_bytes, char[] key, char[] data, String optional_customization = "")
+{
+    char [$outlen_bytes] result;
+
+    $typefrom(kmac($security_level)) c;
+    defer c.wipe();
+    c.init(key, optional_customization);
+    c.update(data);
+    c.final(result[..]);
+
+    return result;
+}
+
+alias Kmac128 = $typefrom(kmac(128));
+alias Kmac256 = $typefrom(kmac(256));
+
+macro char[*] hash_128($outlen_bytes, char[] key, char[] data, String c = "") => xof(128, $outlen_bytes, key, data, c) @inline;
+macro char[*] hash_256($outlen_bytes, char[] key, char[] data, String c = "") => xof(256, $outlen_bytes, key, data, c) @inline;

@@ -120,18 +120,23 @@ fn void keccak_streamed()
 	Keccak384 k3; k3.init();
 	Keccak512 k4; k4.init();
 
-	k1.update(s[:20]); k1.update(s[20:10]); k1.update(s[30:1]); k1.update(s[31..]); 
-	k2.update(s[:20]); k2.update(s[20:10]); k2.update(s[30:1]); k2.update(s[31..]); 
-	k3.update(s[:20]); k3.update(s[20:10]); k3.update(s[30:1]); k3.update(s[31..]); 
-	k4.update(s[:20]); k4.update(s[20:10]); k4.update(s[30:1]); k4.update(s[31..]); 
+	k1.update(s[:20]); k1.update(s[20:10]); k1.update(s[30:1]); k1.update(s[31..]);
+	k2.update(s[:20]); k2.update(s[20:10]); k2.update(s[30:1]); k2.update(s[31..]);
+	k3.update(s[:20]); k3.update(s[20:10]); k3.update(s[30:1]); k3.update(s[31..]);
+	k4.update(s[:20]); k4.update(s[20:10]); k4.update(s[30:1]); k4.update(s[31..]);
 
-	test::eq(k1.final(), x"c1db269e17762c0cb49f90e8c707a5a07bc8ef916a5be614b9025dcd");
-	test::eq(k2.final(), x"1b3448bae1bf51f295092abf1ab79f0691e519cbd4a3cd9c748ed1c766748609");
-	test::eq(k3.final(), x"b36318ba1ed978d9df23f615958967c0b91d35039f02831dee289055f9fe0a4f6aa1118942b073b1b81f43bc4f2fd4a5");
-	test::eq(k4.final(), x"9ab3c2bd4f3d410e717f8f43ce0842ebb432a5d9bb9e669c95728694e25c3cf3e432a99717187c00ecc89a68dc77fd319c17d085bcc21a7a1104ce1c1e309eda");
+	char[224/8] k1_hash; k1.final(k1_hash[..]);
+	char[256/8] k2_hash; k2.final(k2_hash[..]);
+	char[384/8] k3_hash; k3.final(k3_hash[..]);
+	char[512/8] k4_hash; k4.final(k4_hash[..]);
+
+	test::eq(k1_hash, x"c1db269e17762c0cb49f90e8c707a5a07bc8ef916a5be614b9025dcd");
+	test::eq(k2_hash, x"1b3448bae1bf51f295092abf1ab79f0691e519cbd4a3cd9c748ed1c766748609");
+	test::eq(k3_hash, x"b36318ba1ed978d9df23f615958967c0b91d35039f02831dee289055f9fe0a4f6aa1118942b073b1b81f43bc4f2fd4a5");
+	test::eq(k4_hash, x"9ab3c2bd4f3d410e717f8f43ce0842ebb432a5d9bb9e669c95728694e25c3cf3e432a99717187c00ecc89a68dc77fd319c17d085bcc21a7a1104ce1c1e309eda");
 }
 
-fn void keccak_thicc() @if($feature(SLOW_TESTS)) => @pool()
+fn void keccak_large() @if($feature(SLOW_TESTS)) => @pool()
 {
 	char[] bigboi = tests_common::get_bigboi();
 

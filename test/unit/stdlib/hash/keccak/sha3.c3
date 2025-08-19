@@ -12,8 +12,6 @@ import std::hash::keccak::sha3;
 // We of course won't do extended validation here, just sample a few of the many.
 fn void sha3_known_vectors()
 {
-	char[] input;
-
 	test::eq(x"1bb36bebde5f3cb6d8e4672acf6eec8728f31a54dacc2560da2a00cc", sha3::hash_224(x"bf5831"));
 	test::eq(x"0b521dac1efe292e20dfb585c8bff481899df72d59983315958391ba", sha3::hash_224(x"d148ce6d"));
 	test::eq(x"31802a0fa9ae7ae88626604ad9ae41381d6f7c3c90effcfcf70efcf7", sha3::hash_224(x"5c5b8c1902c8608c204e72a813e2b625021b3182c48b00f7fe4f"));
@@ -164,13 +162,18 @@ fn void sha3_streamed()
 	s3.update(s[:20]); s3.update(s[20:10]); s3.update(s[30:1]); s3.update(s[31..]); 
 	s4.update(s[:20]); s4.update(s[20:10]); s4.update(s[30:1]); s4.update(s[31..]); 
 
-	test::eq(s1.final(), x"79a4cf51cfa5bff236652238616166a334603e2839c58f51f6be45d0");
-	test::eq(s2.final(), x"9c18f4c0b611ae8e61c61ee1c221aeb0826df14603100ed25b157a584a73c76d");
-	test::eq(s3.final(), x"30a9e008d31e57658633ef85418081d0cd9b7f5b9bcad88ee4cb80e712184495fb944a2f9b6e42904e70b7085824b3f2");
-	test::eq(s4.final(), x"f21389f669b658ddb19ef62c284aa67e4b079f25d16abc9355d2e62d1e1ffc8f2304390fd3ce0b0a0a6566db6db8d9e88897b4ffd25fa88de786bebdd88a3455");
+	char[224/8] s1_hash; s1.final(s1_hash[..]);
+	char[256/8] s2_hash; s2.final(s2_hash[..]);
+	char[384/8] s3_hash; s3.final(s3_hash[..]);
+	char[512/8] s4_hash; s4.final(s4_hash[..]);
+
+	test::eq(s1_hash, x"79a4cf51cfa5bff236652238616166a334603e2839c58f51f6be45d0");
+	test::eq(s2_hash, x"9c18f4c0b611ae8e61c61ee1c221aeb0826df14603100ed25b157a584a73c76d");
+	test::eq(s3_hash, x"30a9e008d31e57658633ef85418081d0cd9b7f5b9bcad88ee4cb80e712184495fb944a2f9b6e42904e70b7085824b3f2");
+	test::eq(s4_hash, x"f21389f669b658ddb19ef62c284aa67e4b079f25d16abc9355d2e62d1e1ffc8f2304390fd3ce0b0a0a6566db6db8d9e88897b4ffd25fa88de786bebdd88a3455");
 }
 
-fn void sha3_thicc() @if($feature(SLOW_TESTS)) => @pool()
+fn void sha3_large() @if($feature(SLOW_TESTS)) => @pool()
 {
 	char[] bigboi = tests_common::get_bigboi();
 

@@ -8,11 +8,10 @@
 module std::hash::keccak::sha3;
 
 import std::hash::keccak::keccak;
-import std::hash::keccak::keccak_internal @public;
 
 macro typeid sha3($security_level) @local @const
 {
-    return (KeccakContext { 1600, $security_level, 24, 0x06 }).typeid;
+    return keccak::keccak($security_level, $delimiter: 0x06);
 }
 
 macro char[*] hash($security_level, char[] data) @local

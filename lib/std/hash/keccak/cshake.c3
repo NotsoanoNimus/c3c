@@ -21,30 +21,15 @@ enum CShakeFunctionName : int (String customizer)
 module std::hash::keccak::cshake_internal { SECURITY_LEVEL, ROUNDS, DELIMITER } @private;
 
 import std::hash::keccak::shake;
-import std::hash::keccak::shake_internal @public, std::hash::keccak::cshake_common;
+import std::hash::keccak::keccak;
+import std::hash::keccak::cshake_common;
 import std::hash::keccak::nist @public;
 
-const RATE = shake_internal::RATE { SECURITY_LEVEL, ROUNDS, DELIMITER };
+const RATE = keccak::rate(SECURITY_LEVEL);
 
 struct CShakeContext
 {
-    inline ShakeContext{ SECURITY_LEVEL, ROUNDS, DELIMITER } under;
-}
-
-macro void hash_into(char[] data, char[] into, CShakeFunctionName $function = NONE, String optional_customization = "")
-{
-    if (optional_customization == "" && $function.customizer == "")
-    {
-        return shake_internal::hash_into{ SECURITY_LEVEL, ROUNDS, 0x1F }(data, into);
-    }
-
-    CShakeContext c;
-    defer c.wipe();
-
-    c.init($function, optional_customization);
-    c.update(data);
-    c.pad();
-    c.squeeze(into);
+    inline $typefrom(shake::shake(SECURITY_LEVEL, ROUNDS, DELIMITER)) under;
 }
 
 macro void CShakeContext.init(&self, CShakeFunctionName $function = NONE, String optional_customization = "")
@@ -82,46 +67,40 @@ macro void CShakeContext.init(&self, CShakeFunctionName $function = NONE, String
     self.under.fill_block();
 }
 
-fn void CShakeContext.update(&self, char[] data) => self.under.update(data);
-
-macro char[*] CShakeContext.final(&self) => self.under.final();
-
-
-<*
- Parameterized CShake module with a custom security level. Implementations should prefer
- to use common or well-known CShake variants in the 'cshake' module.
-
- @require types::is_int($typeof(SECURITY_LEVEL)) &&& SECURITY_LEVEL > 0 : "SECURITY_LEVEL must be a positive integer value greater than 0."
-*>
-module std::hash::keccak::cshake_p { SECURITY_LEVEL };
-
-import std::hash::keccak::cshake_internal @public, std::hash::keccak::cshake_common;
-
-const RATE = cshake_internal::RATE { SECURITY_LEVEL, 24, 0x04 };
-
-alias CShake = CShakeContext { SECURITY_LEVEL, 24, 0x04 };
-alias hash = cshake_internal::hash_into { SECURITY_LEVEL, 24, 0x04 };
-
 
 module std::hash::keccak::cshake;
 
-import std::hash::keccak::cshake_p;
+import std::hash::keccak::cshake_internal @public;
+import std::hash::keccak::cshake_common;
+import std::hash::keccak::shake;
 
-alias CShake128 = CShake { 128 };
-alias hash_128 = cshake_p::hash { 128 };
-
-alias CShake256 = CShake { 256 };
-alias hash_256 = cshake_p::hash { 256 };
-
-<*
-@require $security_level == 128 ||| $security_level == 256 : `The security level for SHAKE must be 128 or 256.`
-@require $outlen_bytes > 0 : `Output length must be greater than zero.`
-*>
-macro char[*] @hash($security_level, $outlen_bytes, char[] data, String optional_customization = "")
+macro typeid cshake($security_level, $rounds = 24, $delimiter = 0x04) @const
 {
-    char[$outlen_bytes] result;
-
-    cshake_p::hash{ $security_level }(data, result[..], NONE, optional_customization);
-
-    return result;
+    return (CShakeContext { $security_level, $rounds, $delimiter }).typeid;
 }
+
+macro char[*] xof($security_level, $outlen_bytes, char[] data, char[] into, String optional_customization = "", CShakeFunctionName $function = NONE, $rounds = 24, $delimiter = 0x04)
+{
+    if (optional_customization == "" && $function == NONE)
+    {
+        return shake::xof($security_level, $outlen_bytes, data);
+    }
+
+    char[$outlen_bytes] into;
+
+    $typefrom(cshake($security_level, $rounds, $delimiter)) c;
+    defer c.wipe();
+
+    c.init($function, optional_customization);
+    c.update(data);
+    c.pad();
+    c.squeeze(into[..]);
+
+    return into;
+}
+
+alias CShake128 = $typefrom(cshake(128));
+alias CShake256 = $typefrom(cshake(256));
+
+macro char[*] hash_128($outlen_bytes, char[] data, String customizer = "") => xof(128, $outlen_bytes, data, optional_customization: customizer) @inline;
+macro char[*] hash_256($outlen_bytes, char[] data, String customizer = "") => xof(256, $outlen_bytes, data, optional_customization: customizer) @inline;

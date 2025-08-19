@@ -10,33 +10,31 @@
 //   become very confusing to maintainers. It's not worth folding this into SHAKE to save a few
 //   extra lines.
 //
-module std::hash::keccak::turbo_shake_p { SECURITY_LEVEL };
-
-import std::hash::keccak::shake_internal @public;
-
-alias TurboShakeContext = ShakeContext { SECURITY_LEVEL, 12, 0x1F };
-alias hash_into = shake_internal::hash_into { SECURITY_LEVEL, 12, 0x1F };
-
-
 module std::hash::keccak::turbo_shake;
 
-import std::hash::keccak::turbo_shake_p;
+import std::hash::keccak::shake;
 
-alias TurboShake128 = TurboShakeContext { 128 };
-alias hash_128 = turbo_shake_p::hash_into { 128 };
-
-alias TurboShake256 = TurboShakeContext { 256 };
-alias hash_256 = turbo_shake_p::hash_into { 256 };
-
-<*
-@require $security_level == 128 ||| $security_level == 256 : `The security level for TurboSHAKE must be 128 or 256.`
-@require $outlen_bytes > 0 : `Output length must be greater than zero.`
-*>
-macro char[*] @hash($security_level, $outlen_bytes, char[] data, char $delimiter = 0x1F)
+macro typeid turbo($security_level)
 {
-    char[$outlen_bytes] result;
-
-    turbo_shake_p::hash_into{ $security_level }(data, result[..], $delimiter);
-
-    return result;
+    return shake::shake($security_level, $rounds: 12);
 }
+
+macro char[*] xof($security_level, char[] data, char delimiter = 0x1F)
+{
+    char[$outlen_bytes] into;
+
+    $typefrom(shake($security_level, $rounds: 12)) s @noinit;
+    defer s.wipe();
+    s.init(delimiter_override);
+    s.absorb(data);
+    s.pad();
+    s.squeeze(into[..]);
+
+    return into;
+}
+
+alias TurboShake128 = $typefrom(turbo(128));
+alias TurboShake256 = $typefrom(turbo(256));
+
+macro char[*] hash_128($outlen_bytes, char[] data, char delimiter = 0x1F) => xof(128, $outlen_bytes, data, delimiter_override: delimiter) @inline;
+macro char[*] hash_256($outlen_bytes, char[] data, char delimiter = 0x1F) => xof(256, $outlen_bytes, data, delimiter_override: delimiter) @inline;

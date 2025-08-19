@@ -72,25 +72,11 @@ fn void KeccakContext.init(&self, char runtime_delimiter = DELIMITER) @inline
 fn void KeccakContext.update(&self, char[] data) => self.absorb(data);
 
 
-fn char[OUTPUT_BITS / 8] KeccakContext.final(&self)
+fn void KeccakContext.final(&self, char[] into)
 {
-	char[OUTPUT_BITS / 8] result;
-
-	self.pad();
-	self.squeeze(result[:(OUTPUT_BITS / 8)]);
-
 	defer self.wipe();
-
-	return result;
-}
-
-
-fn char[OUTPUT_BITS / 8] hash(char[] data)
-{
-    KeccakContext k @noinit;
-    k.init();
-    k.update(data);
-    return k.final();
+	self.pad();
+	self.squeeze(into);
 }
 
 fn void hash_into(char[] data, char[] into)
@@ -99,8 +85,7 @@ fn void hash_into(char[] data, char[] into)
 	defer k.wipe();
 	k.init();
 	k.update(data);
-	k.pad();
-	k.squeeze(into);
+	k.final(into);
 }
 
 
@@ -277,17 +262,16 @@ module std::hash::keccak::keccak;
 
 import std::hash::keccak::keccak_internal @public;
 
-macro keccak($security_level) @local @const
+macro rate($security_level, $f = 1600) @const => ($f - ($security_level * 2)) / 8;
+
+macro typeid keccak($security_level, $rounds = 24, $delimiter = 0x01, $f = 1600) @const
 {
-	return (KeccakContext { 1600, $security_level, 24, 0x01 }).typeid;
+	return (KeccakContext { $f, $security_level, $rounds, $delimiter }).typeid;
 }
 
-macro char[*] hash($security_level, char[] data, $outlen_bytes = 0)
+macro char[*] hash($security_level, char[] data) @local
 {
-	$if 0 == $outlen_bytes:
-		$outlen_bytes = $security_level / 8;
-	$endif
-	char[$outlen_bytes] result;
+	char[$security_level / 8] result;
 	keccak_internal::hash_into { 1600, $security_level, 24, 0x01 }(data, result[..]);
 	return result;
 }
