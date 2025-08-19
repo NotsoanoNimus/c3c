@@ -1,13 +1,10 @@
 // Copyright (c) 2025 Zack Puhl <github@xmit.xyz>. All rights reserved.
 // Use of this source code is governed by the MIT license
 // a copy of which can be found in the LICENSE_STDLIB file.
-module keccak::cshake_tests @test;
+module sha3::cshake_tests @test;
 
-import keccak::tests_common;
+import sha3::tests_common;
 import std::hash::sha3::cshake;
-import std::math;
-
-import std::io;
 
 
 // See: https://github.com/usnistgov/ACVP-Server/tree/master/gen-val/json-files/cSHAKE-128-1.0
@@ -213,11 +210,11 @@ fn void cshake_large() @if($feature(SLOW_TESTS)) => @pool()
 		},
 	};
 
-	for (usz i = 0; i < tests_common::CUSTOMIZATION_STRINGS.len; ++i)
+	foreach (i ,v : tests_common::CUSTOMIZATION_STRINGS)
 	{
-		test::eq(cshake::xof(128, 16,  bigboi[..], tests_common::CUSTOMIZATION_STRINGS[i])[..], expected[i][0]);
-		test::eq(cshake::xof(128, 256, bigboi[..], tests_common::CUSTOMIZATION_STRINGS[i])[..], expected[i][1]);
-		test::eq(cshake::xof(256, 16,  bigboi[..], tests_common::CUSTOMIZATION_STRINGS[i])[..], expected[i][2]);
-		test::eq(cshake::xof(256, 256, bigboi[..], tests_common::CUSTOMIZATION_STRINGS[i])[..], expected[i][3]);
+		test::eq(cshake::xof(128, 16,  bigboi[..], v)[..], expected[i][0]);
+		test::eq(cshake::xof(128, 256, bigboi[..], v)[..], expected[i][1]);
+		test::eq(cshake::xof(256, 16,  bigboi[..], v)[..], expected[i][2]);
+		test::eq(cshake::xof(256, 256, bigboi[..], v)[..], expected[i][3]);
 	}
 }

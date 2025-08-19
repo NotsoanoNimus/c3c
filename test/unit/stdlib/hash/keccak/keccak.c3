@@ -1,9 +1,9 @@
 // Copyright (c) 2025 Zack Puhl <github@xmit.xyz>. All rights reserved.
 // Use of this source code is governed by the MIT license
 // a copy of which can be found in the LICENSE_STDLIB file.
-module keccak::keccak_tests @test;
+module sha3::keccak_tests @test;
 
-import keccak::tests_common;
+import sha3::tests_common;
 import std::hash::sha3::keccak @public;
 
 

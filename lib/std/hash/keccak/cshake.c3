@@ -28,7 +28,7 @@ macro void CShakeContext.init(&self, CShakeFunctionName $function = NONE, String
 
 	if (optional_customization == "" && $function_name == "")
 	{
-		return self.under.init(0x1F);   // override delimiter with default SHAKE delimiter (see NIST spec)
+		return self.under.init();   // override delimiter with default SHAKE delimiter (see NIST spec)
 	}
 
 	self.under.init();

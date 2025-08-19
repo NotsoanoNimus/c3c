@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Zack Puhl <github@xmit.xyz>. All rights reserved.
 // Use of this source code is governed by the MIT license
 // a copy of which can be found in the LICENSE_STDLIB file.
-module keccak::tests_common;
+module sha3::tests_common;
 
 
 // Should be common to every SHA-3 test module. See 'generator.py'
@@ -21,7 +21,14 @@ const String[] CUSTOMIZATION_STRINGS =
 {
 	"",
 	"email signature",
-	"my customization string that is a bit longer"
+	"my customization string that is a bit longer",
+};
+
+
+const String[] KMAC_KEYS =
+{
+	"correct horse battery staple cryptographic brainrot",
+	"RJ5r5ToA9N9~Y-,kin8y]xB}kviaDk_kPI",
 };
 
 

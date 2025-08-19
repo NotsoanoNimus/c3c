@@ -40,8 +40,7 @@ fn void KmacContext.update(&self, char[] data) => self.c.update(data);
 macro void KmacContext.final(&self, char[] out)
 {
 	self.c.update(nist::encode_length(NistEncodingType.RIGHT, out.len));
-	self.c.pad();
-	self.c.squeeze(out[..]);
+	self.c.final(out);
 }
 
 
@@ -61,6 +60,7 @@ macro char[*] xof($security_level, $outlen_bytes, char[] key, char[] data, Strin
 
 	$typefrom(kmac($security_level)) c;
 	defer c.wipe();
+
 	c.init(key, optional_customization);
 	c.update(data);
 	c.final(result[..]);
