@@ -19,13 +19,13 @@ macro typeid turbo($security_level)
     return shake::shake($security_level, $rounds: 12);
 }
 
-macro char[*] xof($security_level, char[] data, char delimiter = 0x1F)
+macro char[*] xof($security_level, $outlen_bytes, char[] data, char delimiter = 0x1F)
 {
     char[$outlen_bytes] into;
 
-    $typefrom(shake($security_level, $rounds: 12)) s @noinit;
+    $typefrom(shake::shake($security_level, $rounds: 12)) s @noinit;
     defer s.wipe();
-    s.init(delimiter_override);
+    s.init(delimiter);
     s.absorb(data);
     s.pad();
     s.squeeze(into[..]);
@@ -36,5 +36,5 @@ macro char[*] xof($security_level, char[] data, char delimiter = 0x1F)
 alias TurboShake128 = $typefrom(turbo(128));
 alias TurboShake256 = $typefrom(turbo(256));
 
-macro char[*] hash_128($outlen_bytes, char[] data, char delimiter = 0x1F) => xof(128, $outlen_bytes, data, delimiter_override: delimiter) @inline;
-macro char[*] hash_256($outlen_bytes, char[] data, char delimiter = 0x1F) => xof(256, $outlen_bytes, data, delimiter_override: delimiter) @inline;
+macro char[*] hash_128($outlen_bytes, char[] data, char delimiter = 0x1F) => xof(128, $outlen_bytes, data, delimiter: delimiter) @inline;
+macro char[*] hash_256($outlen_bytes, char[] data, char delimiter = 0x1F) => xof(256, $outlen_bytes, data, delimiter: delimiter) @inline;
