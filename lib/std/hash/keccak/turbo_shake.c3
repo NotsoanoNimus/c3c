@@ -10,27 +10,27 @@
 //   become very confusing to maintainers. It's not worth folding this into SHAKE to save a few
 //   extra lines.
 //
-module std::hash::keccak::turbo_shake;
+module std::hash::sha3::turbo_shake;
 
-import std::hash::keccak::shake;
+import std::hash::sha3::shake;
 
 macro typeid turbo($security_level)
 {
-    return shake::shake($security_level, $rounds: 12);
+	return shake::shake($security_level, $rounds: 12);
 }
 
 macro char[*] xof($security_level, $outlen_bytes, char[] data, char delimiter = 0x1F)
 {
-    char[$outlen_bytes] into;
+	char[$outlen_bytes] into;
 
-    $typefrom(shake::shake($security_level, $rounds: 12)) s @noinit;
-    defer s.wipe();
-    s.init(delimiter);
-    s.absorb(data);
-    s.pad();
-    s.squeeze(into[..]);
+	$typefrom(shake::shake($security_level, $rounds: 12)) s @noinit;
+	defer s.wipe();
+	s.init(delimiter);
+	s.absorb(data);
+	s.pad();
+	s.squeeze(into[..]);
 
-    return into;
+	return into;
 }
 
 alias TurboShake128 = $typefrom(turbo(128));

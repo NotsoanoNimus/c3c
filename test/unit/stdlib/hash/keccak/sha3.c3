@@ -4,7 +4,7 @@
 module keccak::sha3_tests @test;
 
 import keccak::tests_common;
-import std::hash::keccak::sha3;
+import std::hash::sha3::sha3;
 
 
 // See: https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Algorithm-Validation-Program/documents/sha3/sha-3bytetestvectors.zip

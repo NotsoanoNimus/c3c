@@ -4,7 +4,7 @@
 module keccak::turbo_shake_tests @test;
 
 import keccak::tests_common;
-import std::hash::keccak::turbo_shake;
+import std::hash::sha3::turbo_shake;
 import std::math;
 
 
@@ -90,10 +90,10 @@ fn void turbo_shake_simple()
 
 	foreach (i, v : tests_common::SIMPLE_VECTORS)
 	{
-        test::@check(turbo_shake::hash_128(16, v)[..]  == expected[i][0], `128(16): Failed on vector "%s".`, v);
-        test::@check(turbo_shake::hash_128(256, v)[..] == expected[i][1], `128(256): Failed on vector "%s".`, v);
-        test::@check(turbo_shake::hash_256(16, v)[..]  == expected[i][2], `256(16): Failed on vector "%s".`, v);
-        test::@check(turbo_shake::hash_256(256, v)[..] == expected[i][3], `256(256): Failed on vector "%s".`, v);
+		test::@check(turbo_shake::hash_128(16, v)[..]  == expected[i][0], `128(16): Failed on vector "%s".`, v);
+		test::@check(turbo_shake::hash_128(256, v)[..] == expected[i][1], `128(256): Failed on vector "%s".`, v);
+		test::@check(turbo_shake::hash_256(16, v)[..]  == expected[i][2], `256(16): Failed on vector "%s".`, v);
+		test::@check(turbo_shake::hash_256(256, v)[..] == expected[i][3], `256(256): Failed on vector "%s".`, v);
 	}
 }
 

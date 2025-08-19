@@ -4,7 +4,7 @@
 module keccak::keccak_tests @test;
 
 import keccak::tests_common;
-import std::hash::keccak::keccak @public;
+import std::hash::sha3::keccak @public;
 
 
 // There doesn't seem to be any widely available source of Keccak-specific standardized tests.

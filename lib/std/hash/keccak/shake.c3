@@ -2,27 +2,27 @@
 // Use of this source code is governed by the MIT license
 // a copy of which can be found in the LICENSE_STDLIB file.
 //
-module std::hash::keccak::shake;
+module std::hash::sha3::shake;
 
-import std::hash::keccak::keccak;
+import std::hash::sha3::keccak;
 
 macro typeid shake($security_level, $rounds = 24, $delimiter = 0x1F) @const
 {
-    return keccak::keccak($security_level, $rounds: $rounds, $delimiter: $delimiter);
+	return keccak::keccak($security_level, $rounds: $rounds, $delimiter: $delimiter);
 }
 
 macro char[*] xof($security_level, $outlen_bytes, char[] data, char delimiter_override = 0x1F)
 {
-    char[$outlen_bytes] into;
+	char[$outlen_bytes] into;
 
-    $typefrom(shake($security_level)) s @noinit;
-    defer s.wipe();
-    s.init(delimiter_override);
-    s.absorb(data);
-    s.pad();
-    s.squeeze(into[..]);
+	$typefrom(shake($security_level)) s @noinit;
+	defer s.wipe();
+	s.init(delimiter_override);
+	s.absorb(data);
+	s.pad();
+	s.squeeze(into[..]);
 
-    return into;
+	return into;
 }
 
 alias Shake128 = $typefrom(shake(128));

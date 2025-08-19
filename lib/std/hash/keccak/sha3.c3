@@ -5,18 +5,18 @@
 <*
 @require values::@is_int(HASH_BITS) : `HASH_BITS must be an integer type.`
 *>
-module std::hash::keccak::sha3;
+module std::hash::sha3::sha3;
 
-import std::hash::keccak::keccak;
+import std::hash::sha3::keccak;
 
 macro typeid sha3($security_level) @local @const
 {
-    return keccak::keccak($security_level, $delimiter: 0x06);
+	return keccak::keccak($security_level, $delimiter: 0x06);
 }
 
 macro char[*] hash($security_level, char[] data) @local
 {
-    return keccak::explicit_hash($security_level, 0x06, $security_level / 8, data);
+	return keccak::explicit_hash($security_level, 0x06, $security_level / 8, data);
 }
 
 alias Sha3_224 = $typefrom(sha3(224));

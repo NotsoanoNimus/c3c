@@ -64,6 +64,7 @@ def turboshake_xof(level, trim_length, data, custom = None):
 	return xof.read(trim_length).hex()
 
 def cshake_xof(level, trim_length, data, custom = None):
+	print(f"cSHAKE (c:{custom} / L:{level} / D:{len(data)}) -- cSHAKE{level}.new(custom=b'{custom}')")
 	xof = eval(f"cSHAKE{level}.new()") if custom is None else eval(f"cSHAKE{level}.new(custom=b'{custom}')")
 	xof.update(data.encode('utf-8'))
 	return xof.read(trim_length).hex()
@@ -72,9 +73,9 @@ def get_xofs(levels, trim_lengths, customization_strings, xof_func):
 	res = dict()
 	for level in levels:
 		res[level] = {
-			'empty':	[xof_func(level, i, "", s) for i in trim_lengths for s in customization_strings],
-			'simple':	[xof_func(level, i, j, s) for i in trim_lengths for j in simple for s in customization_strings],
-			'slow':		[xof_func(level, i, "".join(['a'] * 100000000), s) for i in trim_lengths for s in customization_strings],
+			# 'empty':	[xof_func(level, i, "", s) for i in trim_lengths for s in customization_strings],
+			# 'simple':	[xof_func(level, i, j, s) for i in trim_lengths for j in simple for s in customization_strings],
+			# 'slow':		[xof_func(level, i, "".join(['a'] * 100000000), s) for i in trim_lengths for s in customization_strings],
 			'a...':		[xof_func(level, i, "".join(list_of_a[0:(1+j*64)]), s) for j in range(5) for i in trim_lengths for s in customization_strings],
 		}
 	return res
@@ -91,9 +92,9 @@ def main():
 	res = {
 		# 'KECCAK':		get_digests([224, 256, 384, 512], keccak_digest),
 		# 'SHA3':			get_digests([224, 256, 384, 512], sha3_digest),
-		'SHAKE':		get_xofs([128, 256], [16, 256], [''], shake_xof),
+		# 'SHAKE':		get_xofs([128, 256], [16, 256], [''], shake_xof),
 		# 'TURBO-SHAKE':	get_xofs([128, 256], [16, 256], [''], turboshake_xof),
-		# 'CSHAKE':		get_xofs([128, 256], [16, 256], sample_custom_strs, cshake_xof),
+		'CSHAKE':		get_xofs([128, 256], [64], sample_custom_strs, cshake_xof),
 		# 'KMAC':			get_kmacs(),
 	}
 	pprint.pprint(res)

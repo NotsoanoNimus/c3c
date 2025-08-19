@@ -17,6 +17,14 @@ const String[] SIMPLE_VECTORS =
 };
 
 
+const String[] CUSTOMIZATION_STRINGS =
+{
+	"",
+	"email signature",
+	"my customization string that is a bit longer"
+};
+
+
 const String STREAM_VECTOR =
 	"This Standard specifies the Secure Hash Algorithm-3 (SHA-3) family of"
 	" functions on binary data. Each of the SHA-3 functions is based on an instance"
