@@ -298,3 +298,22 @@ fn void kmac_successive_xof_operations_256()
 
 	test::eq(buf[:expected.len], expected[..]);
 }
+
+fn void xof_vs_non_xof()
+{
+	// iykyk ;)
+	char[50] buf;
+
+	KmacXOF128 k;
+	k.init("A KMAC secret key", "");
+	k.update("hello123");
+
+	k.squeeze(buf[..]);
+	test::eq(buf, x"628c2fb870d294b3673ac82d9f0d651aae6a5bb8084ea8cd8343cb888d075b9053173200a71f301141069c3c0322527981f7");
+
+	k.squeeze(buf[..]);
+	test::eq(buf, x"7b638e178cfdac5727a4ea7694efaa967a65a1d0034501855acff506b4158d187d5a18d668e67b43f2abf61144b20ed4c09f");
+
+	// but this one is different
+	test::eq(kmac::hash_128(32, "A KMAC secret key", "hello123"), x"1fa1c0d761129a83f9a4299ca137674de8373a3cc437799ae4c129e651627f8e");
+}
