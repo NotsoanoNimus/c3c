@@ -23,12 +23,11 @@ macro char[*] xof($security_level, $outlen_bytes, char[] data, char delimiter = 
 {
 	char[$outlen_bytes] into;
 
-	$typefrom(shake::shake($security_level, $rounds: 12)) s @noinit;
+	$typefrom(shake::shake($security_level, $rounds: 12)) s;
 	defer s.wipe();
 	s.init(delimiter);
-	s.absorb(data);
-	s.pad();
-	s.squeeze(into[..]);
+	s.update(data);
+	s.final(into[..]);
 
 	return into;
 }

@@ -60,6 +60,7 @@ struct KeccakContext
 	usz offset;   // tracking leftover bytes from absorption
 	char[RATE] buf;   // absorption buffer
 	char runtime_delimiter;
+	bool is_padded;
 }
 
 
@@ -69,13 +70,13 @@ fn void KeccakContext.init(&self, char runtime_delimiter = DELIMITER) @inline
 	=> *self = { .runtime_delimiter = runtime_delimiter };
 
 
-fn void KeccakContext.update(&self, char[] data) => self.absorb(data);
+fn void KeccakContext.update(&self, char[] data) => self.absorb(data) @inline;
 
 
 fn void KeccakContext.final(&self, char[] into)
 {
 	defer self.wipe();
-	self.pad();
+	if (!self.is_padded) self.pad();
 	self.squeeze(into);
 }
 
@@ -139,7 +140,7 @@ fn void KeccakContext.absorb(&self, char[] input) @inline
 }
 
 
-fn void KeccakContext.pad(&self) @inline
+fn void KeccakContext.pad(&self) @private @inline
 {
 	foreach (j, c : self.buf[:self.offset]) self.state_bytes[j] ^= c;
 
@@ -154,6 +155,8 @@ fn void KeccakContext.pad(&self) @inline
 
 	self.permute_r(ROUNDS);
 	self.offset = 0;
+
+	self.is_padded = true;
 }
 
 
@@ -201,7 +204,7 @@ fn void KeccakContext.squeeze(&self, char[] out) @inline
 }
 
 
-fn void KeccakContext.permute_r(&self, usz rounds)
+fn void KeccakContext.permute_r(&self, usz rounds) @local
 {
 	usz i = RC.len - rounds;
 
@@ -216,7 +219,7 @@ fn void KeccakContext.permute_r(&self, usz rounds)
 }
 
 
-fn void KeccakContext.round(&self, ulong rc)
+fn void KeccakContext.round(&self, ulong rc) @local
 {
 	ulong[5] b;
 	ulong t;

@@ -48,13 +48,13 @@ fn void kmac_empty()
 
 	foreach (j, w : tests_common::CUSTOMIZATION_STRINGS)
 	{
-		test::eq(kmac::xof(128, 32,  tests_common::KMAC_KEYS[0], "", w)[..], expected[j][0][..]);
-		test::eq(kmac::xof(128, 64,  tests_common::KMAC_KEYS[0], "", w)[..], expected[j][1][..]);
-		test::eq(kmac::xof(128, 128, tests_common::KMAC_KEYS[0], "", w)[..], expected[j][2][..]);
+		test::eq(kmac::hash_128(32,  tests_common::KMAC_KEYS[0], "", w)[..], expected[j][0][..]);
+		test::eq(kmac::hash_128(64,  tests_common::KMAC_KEYS[0], "", w)[..], expected[j][1][..]);
+		test::eq(kmac::hash_128(128, tests_common::KMAC_KEYS[0], "", w)[..], expected[j][2][..]);
 
-		test::eq(kmac::xof(256, 32,  tests_common::KMAC_KEYS[0], "", w)[..], expected[j][3][..]);
-		test::eq(kmac::xof(256, 64,  tests_common::KMAC_KEYS[0], "", w)[..], expected[j][4][..]);
-		test::eq(kmac::xof(256, 128, tests_common::KMAC_KEYS[0], "", w)[..], expected[j][5][..]);
+		test::eq(kmac::hash_256(32,  tests_common::KMAC_KEYS[0], "", w)[..], expected[j][3][..]);
+		test::eq(kmac::hash_256(64,  tests_common::KMAC_KEYS[0], "", w)[..], expected[j][4][..]);
+		test::eq(kmac::hash_256(128, tests_common::KMAC_KEYS[0], "", w)[..], expected[j][5][..]);
 	}
 }
 
@@ -245,12 +245,56 @@ fn void kmac_large() @if($feature(SLOW_TESTS)) => @pool()
 
 	foreach (i, v : tests_common::CUSTOMIZATION_STRINGS)
 	{
-		test::eq(kmac::xof(128, 32,  tests_common::KMAC_KEYS[1], bigboi[..], v)[..], expected[i][0]);
-		test::eq(kmac::xof(128, 64,  tests_common::KMAC_KEYS[1], bigboi[..], v)[..], expected[i][1]);
-		test::eq(kmac::xof(128, 128, tests_common::KMAC_KEYS[1], bigboi[..], v)[..], expected[i][2]);
+		test::eq(kmac::hash_128(32,  tests_common::KMAC_KEYS[1], bigboi[..], v)[..], expected[i][0]);
+		test::eq(kmac::hash_128(64,  tests_common::KMAC_KEYS[1], bigboi[..], v)[..], expected[i][1]);
+		test::eq(kmac::hash_128(128, tests_common::KMAC_KEYS[1], bigboi[..], v)[..], expected[i][2]);
 
-		test::eq(kmac::xof(256, 32,  tests_common::KMAC_KEYS[1], bigboi[..], v)[..], expected[i][3]);
-		test::eq(kmac::xof(256, 64,  tests_common::KMAC_KEYS[1], bigboi[..], v)[..], expected[i][4]);
-		test::eq(kmac::xof(256, 128, tests_common::KMAC_KEYS[1], bigboi[..], v)[..], expected[i][5]);
+		test::eq(kmac::hash_256(32,  tests_common::KMAC_KEYS[1], bigboi[..], v)[..], expected[i][3]);
+		test::eq(kmac::hash_256(64,  tests_common::KMAC_KEYS[1], bigboi[..], v)[..], expected[i][4]);
+		test::eq(kmac::hash_256(128, tests_common::KMAC_KEYS[1], bigboi[..], v)[..], expected[i][5]);
 	}
+}
+
+fn void kmac_successive_xof_operations_128()
+{
+	char[] expected = x"38742f2e6a0edf501ba625afed22fb6879d2ec0f10ee9012ac410b9f8bce51a5";
+
+	test::eq(kmac::xof_128(32, tests_common::KMAC_KEYS[1], "i want to be sure this message wasn't tampered with", "!!!!!@@@@@#####$$$$$")[..], expected[..]);
+
+	// Now use the cryptographic XOF functionality to squeeze variable-length data out of SHAKE in .
+	//   We "squeeze" 8 bytes at a time, and the resulting value of the XOF, when concatenated, will match the expected value.
+	char[32] buf;
+	KmacXOF128 k;
+	k.init(tests_common::KMAC_KEYS[1], "!!!!!@@@@@#####$$$$$");
+	k.update("i want to be sure this message wasn't tampered with");
+	k.squeeze(buf[0:8]);
+	k.squeeze(buf[8:8]);
+	k.squeeze(buf[16:8]);
+	k.squeeze(buf[24:8]);
+
+	test::eq(buf[..], expected[..]);
+}
+
+fn void kmac_successive_xof_operations_256()
+{
+	char[] expected = x"f0b8525e66f4d3845848f198a57bd615057f66becd1ede603f6110a3f5e91e504d288267907c58f5aeb63d301455c515ab184a";
+
+	test::eq(kmac::xof_256(51, tests_common::KMAC_KEYS[1], "i want to be sure this message wasn't tampered with", "!!!!!@@@@@#####$$$$$")[..], expected[..]);
+
+	// This one shows the even though we squeeze at odd intervals, or beyond the length of the original expected value,
+	//   the prefix will still match.
+	char[128] buf;
+	KmacXOF256 k;
+	k.init(tests_common::KMAC_KEYS[1], "!!!!!@@@@@#####$$$$$");
+	k.update("i want to be sure this message wasn't tampered with");
+	k.squeeze(buf[0:7]);
+	k.squeeze(buf[7:13]);
+	k.squeeze(buf[20:20]);
+	k.squeeze(buf[40:1]);
+	k.squeeze(buf[41:3]);
+	k.squeeze(buf[44:9]);
+	k.squeeze(buf[53:10]);
+	k.squeeze(buf[63..]);
+
+	test::eq(buf[:expected.len], expected[..]);
 }

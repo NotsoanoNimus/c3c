@@ -70,18 +70,21 @@ macro typeid cshake($security_level, $rounds = 24, $delimiter = 0x04) @const
 	return (CShakeContext { $security_level, $rounds, $delimiter }).typeid;
 }
 
-macro char[*] xof($security_level, $outlen_bytes, char[] data, String optional_customization = "", NistFunctionName $function = NONE, $rounds = 24, $delimiter = 0x04)
+macro char[*] xof($security_level, $outlen_bytes, char[] data, String optional_customization = "", NistFunctionName $function = NONE, $rounds = 24, $delimiter = 0x04) @local
 {
 	if (optional_customization == "" && $function == NONE)
 	{
-		return shake::xof($security_level, $outlen_bytes, data);
+		$switch $security_level:
+		$case 128: return shake::xof_128($outlen_bytes, data);
+		$case 256: return shake::xof_256($outlen_bytes, data);
+		$default: unreachable("SECURITY_LEVEL not defined for SHAKE. Use 128 or 256 only.");
+		$endswitch
 	}
 
 	char[$outlen_bytes] into;
 
 	$typefrom(cshake($security_level, $rounds, $delimiter)) c;
 	defer c.wipe();
-
 	c.init($function, optional_customization);
 	c.update(data);
 	c.final(into[..]);
@@ -92,12 +95,12 @@ macro char[*] xof($security_level, $outlen_bytes, char[] data, String optional_c
 alias CShake128 = $typefrom(cshake(128));
 alias CShake256 = $typefrom(cshake(256));
 
-macro char[*] hash_128($outlen_bytes, char[] data, String customizer = "", NistFunctionName $function = NONE, $rounds = 24, $delimiter = 0x04)
+macro char[*] xof_128($outlen_bytes, char[] data, String customizer = "", NistFunctionName $function = NONE, $rounds = 24, $delimiter = 0x04)
 {
 	return xof(128, $outlen_bytes, data, customizer, $function, $rounds, $delimiter) @inline;
 }
 
-macro char[*] hash_256($outlen_bytes, char[] data, String customizer = "", NistFunctionName $function = NONE, $rounds = 24, $delimiter = 0x04)
+macro char[*] xof_256($outlen_bytes, char[] data, String customizer = "", NistFunctionName $function = NONE, $rounds = 24, $delimiter = 0x04)
 {
 	return xof(256, $outlen_bytes, data, customizer, $function, $rounds, $delimiter) @inline;
 }
