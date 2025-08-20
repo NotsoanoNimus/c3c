@@ -22,7 +22,7 @@ struct CShakeContext
 	inline $typefrom(shake::shake(SECURITY_LEVEL, ROUNDS, DELIMITER)) under;
 }
 
-macro void CShakeContext.init(&self, CShakeFunctionName $function = NONE, String optional_customization = "")
+macro void CShakeContext.init(&self, NistFunctionName $function = NONE, String optional_customization = "")
 {
 	String $function_name = $function.customizer;
 
@@ -70,7 +70,7 @@ macro typeid cshake($security_level, $rounds = 24, $delimiter = 0x04) @const
 	return (CShakeContext { $security_level, $rounds, $delimiter }).typeid;
 }
 
-macro char[*] xof($security_level, $outlen_bytes, char[] data, String optional_customization = "", CShakeFunctionName $function = NONE, $rounds = 24, $delimiter = 0x04)
+macro char[*] xof($security_level, $outlen_bytes, char[] data, String optional_customization = "", NistFunctionName $function = NONE, $rounds = 24, $delimiter = 0x04)
 {
 	if (optional_customization == "" && $function == NONE)
 	{
@@ -92,12 +92,12 @@ macro char[*] xof($security_level, $outlen_bytes, char[] data, String optional_c
 alias CShake128 = $typefrom(cshake(128));
 alias CShake256 = $typefrom(cshake(256));
 
-macro char[*] hash_128($outlen_bytes, char[] data, String customizer = "", CShakeFunctionName $function = NONE, $rounds = 24, $delimiter = 0x04)
+macro char[*] hash_128($outlen_bytes, char[] data, String customizer = "", NistFunctionName $function = NONE, $rounds = 24, $delimiter = 0x04)
 {
 	return xof(128, $outlen_bytes, data, customizer, $function, $rounds, $delimiter) @inline;
 }
 
-macro char[*] hash_256($outlen_bytes, char[] data, String customizer = "", CShakeFunctionName $function = NONE, $rounds = 24, $delimiter = 0x04)
+macro char[*] hash_256($outlen_bytes, char[] data, String customizer = "", NistFunctionName $function = NONE, $rounds = 24, $delimiter = 0x04)
 {
 	return xof(256, $outlen_bytes, data, customizer, $function, $rounds, $delimiter) @inline;
 }

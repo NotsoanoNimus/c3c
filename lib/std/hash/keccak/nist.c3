@@ -10,7 +10,7 @@ module std::hash::sha3::nist @private;
 import std::math;
 
 
-enum CShakeFunctionName : int (String customizer)
+enum NistFunctionName : int (String customizer)
 {
 	NONE = "",
 	KMAC = "KMAC",
