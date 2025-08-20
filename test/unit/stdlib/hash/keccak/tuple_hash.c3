@@ -7,10 +7,27 @@ import sha3::tests_common;
 import std::hash::sha3::tuple_hash;
 
 
+fn void tuple_hash_xof_vs_non_xof()
+{
+	// this doesn't appear in the test-suite, but notice that varying out-length values for the _hash_ subset of tuple_hash functions
+	//   will NOT produce substrings of an extensible output like the XOF variants do
+	test::ne(
+		tuple_hash::hash_128(496 / 8, x"abcd", x"efef", c: "bbb123123___A")[:32],
+		tuple_hash::hash_128(472 / 8, x"abcd", x"efef", c: "bbb123123___A")[:32]
+	);
+
+	// this doesn't appear in the test suite, but proves that the _xof_ subset is just using an underlying
+	//   EXTENDED output primitive (keccak output is not affected by out-length)
+	test::eq(
+		tuple_hash::xof_128(496 / 8, x"abcd", x"efef", c: "bbb123123___A")[:32],
+		tuple_hash::xof_128(472 / 8, x"abcd", x"efef", c: "bbb123123___A")[:32]
+	);
+}
+
 // See: https://github.com/usnistgov/ACVP-Server/blob/master/gen-val/json-files/TupleHash-128-1.0/internalProjection.json
 //   & https://github.com/usnistgov/ACVP-Server/blob/master/gen-val/json-files/TupleHash-256-1.0/internalProjection.json
 //
-fn void tuple_hash_known_vectors()
+fn void tuple_hash_known_vectors_xof()
 {
 	/* tgId  1  / xof: true */
 	/* --> tcId    1 */
@@ -22,17 +39,13 @@ fn void tuple_hash_known_vectors()
 			c: "V{6?N|`G4bJ@:QG?.p^kO81h<]*xNxFk2I7QVhBzlkhf77tz01dG)iI?kM$qsfx;<^.o;uhEMc}cNJP%g.i=4}bH ve)eP('rMJW)&`9H?yEjeo@{}+e|Z'={eoC0`_|[wp! x{bMOtt%<]:(D-fEA*7"
 		)
 	);
-	// this doesn't appear in the test suite, but proves that this is just an EXTENDED output (doesn't change w/ out-length).
-	//   notice that this is just a subset of the above XOF output
-	test::eq(x"2a1734392ea30b0e",
-		tuple_hash::xof_128(64 / 8,
-			x"dc246a7b5fe7dd2e63df4c1310fc30839c65995d2369141dff7af80481630b7b6f4b634c587ffd12f06503a5ee71c7ad150c08ba4bbaa24070c3fa5df9ce9366843b84d7a94590a51fe518c6aa85e0fad7f2d315ca90b7f4230d91e9241cf7082bad2acf6b9ea0e821d24a02aec54d02ac1f79f1d7bf14af0bf076492db27869",
-			"",
-			"",
-			c: "V{6?N|`G4bJ@:QG?.p^kO81h<]*xNxFk2I7QVhBzlkhf77tz01dG)iI?kM$qsfx;<^.o;uhEMc}cNJP%g.i=4}bH ve)eP('rMJW)&`9H?yEjeo@{}+e|Z'={eoC0`_|[wp! x{bMOtt%<]:(D-fEA*7"
-		)
-	);
+}
 
+// See: https://github.com/usnistgov/ACVP-Server/blob/master/gen-val/json-files/TupleHash-128-1.0/internalProjection.json
+//   & https://github.com/usnistgov/ACVP-Server/blob/master/gen-val/json-files/TupleHash-256-1.0/internalProjection.json
+//
+fn void tuple_hash_known_vectors_non_xof()
+{
 	/* tgId  2 / xof: false */
 	/* --> tcId  101 */
 	test::eq(x"26bae9c50275d9efdead085893f1def8d1c674ad4be636afc1bb8cef9acb124da6c2c361e75c8ca76dd6bf0a9b547ace7beb56c5508653e57e58c1674537",
