@@ -7,7 +7,7 @@
 <*
  @require types::is_int($typeof(SECURITY_LEVEL)) &&& SECURITY_LEVEL > 0 : "SECURITY_LEVEL must be a positive integer value greater than 0."
 *>
-module std::hash::sha3::tuple_hash_internal { SECURITY_LEVEL, IS_XOF } @private;
+module std::hash::sha3::tuple_hash_internal { SECURITY_LEVEL } @private;
 
 import std::hash::sha3::keccak;
 import std::hash::sha3::cshake;
@@ -18,10 +18,12 @@ const RATE = keccak::rate(SECURITY_LEVEL);
 struct TupleHashContext
 {
 	inline $typefrom(cshake::cshake(SECURITY_LEVEL)) c;
+	bool is_xof_mode;
 }
 
-fn void TupleHashContext.init(&self, String optional_customization = "")
+fn void TupleHashContext.init(&self, String optional_customization = "", bool is_xof_mode = false)
 {
+	self.is_xof_mode = is_xof_mode;
 	self.c.init(TUPLE_HASH, optional_customization);
 }
 
@@ -47,11 +49,14 @@ fn void TupleHashContext.update(&self, char[] data, char[]... extra)
 *>
 macro void TupleHashContext.final(&self, char[] out)
 {
-	$if IS_XOF:
+	if (self.is_xof_mode)
+	{
 		self.c.update(nist::@ct_encode_length(NistEncodingType.RIGHT, 0));
-	$else
+	}
+	else
+	{
 		self.c.update(nist::encode_length(NistEncodingType.RIGHT, out.len));
-	$endif
+	}
 
 	self.c.final(out);
 }
@@ -64,12 +69,7 @@ import std::hash::sha3::tuple_hash_internal @public;
 
 macro typeid tuple_hash($security_level) @local @const
 {
-	return (TupleHashContext { $security_level, false }).typeid;
-}
-
-macro typeid tuple_hash_xof($security_level) @local @const
-{
-	return (TupleHashContext { $security_level, true }).typeid;
+	return (TupleHashContext { $security_level }).typeid;
 }
 
 // Set to local scope because only 128 and 256 should ever be exposed.
@@ -77,14 +77,10 @@ macro char[*] xof($security_level, $outlen_bytes, char[] data, char[]... extras,
 {
 	char [$outlen_bytes] result;
 
-	$if $is_xof:
-		$typefrom(tuple_hash_xof($security_level)) c;
-	$else
-		$typefrom(tuple_hash($security_level)) c;
-	$endif
+	$typefrom(tuple_hash($security_level)) c;
 	defer c.wipe();
 
-	c.init(optional_customization);
+	c.init(optional_customization, is_xof_mode: $is_xof);
 	c.update(data, ...extras);
 	c.final(result[..]);
 
@@ -97,8 +93,17 @@ alias TupleHash256 = $typefrom(tuple_hash(256));
 // The XOF variant of TupleHash uses a `right_encode(0)` at the end of the input stream.
 //   This causes the output value to be completely different and not dependent on the length of the output buffer.
 //   To better understand this, or to see the reference, search for NIST SP 800-185.
-alias TupleHashXOF128 = $typefrom(tuple_hash_xof(128));
-alias TupleHashXOF256 = $typefrom(tuple_hash_xof(256));
+struct TupleHashXOF128
+{
+	inline $typefrom(tuple_hash(128)) th;
+}
+fn void TupleHashXOF128.init(&self, String optional_customization = "") => self.th.init(optional_customization, is_xof_mode: true) @inline;
+
+struct TupleHashXOF256
+{
+	inline $typefrom(tuple_hash(256)) th;
+}
+fn void TupleHashXOF256.init(&self, String optional_customization = "") => self.th.init(optional_customization, is_xof_mode: true) @inline;
 
 macro char[*] hash_128($outlen_bytes, char[] data, char[]... extras, String c = "") => xof(128, $outlen_bytes, data, ...extras, optional_customization: c) @inline;
 macro char[*] hash_256($outlen_bytes, char[] data, char[]... extras, String c = "") => xof(256, $outlen_bytes, data, ...extras, optional_customization: c) @inline;
