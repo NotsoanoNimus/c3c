@@ -3691,6 +3691,10 @@ static inline bool sema_expr_resolve_subscript_index(SemaContext *context, Expr 
 		if (!subscript_type)
 		{
 			if (check_valid) return false;
+			if (overload_type == OVERLOAD_ELEMENT_REF)
+			{
+				RETURN_SEMA_ERROR(expr, "Getting a reference to a subscript of %s is not possible.", type_quoted_error_string(subscripted->type));
+			}
 			RETURN_SEMA_ERROR(expr, "Indexing a value of type %s is not possible.", type_quoted_error_string(subscripted->type));
 		}
 		if (!overload) current_type = type_flatten(current_expr->type);
@@ -3789,13 +3793,27 @@ static inline bool sema_expr_analyse_subscript_lvalue(SemaContext *context, Expr
 {
 	// Evaluate the expression to index.
 	Expr *subscripted = exprptr(expr->subscript_expr.expr);
-	if (subscripted->expr_kind == EXPR_CT_IDENT)
+	switch (subscripted->expr_kind)
 	{
-		if (!sema_analyse_expr_lvalue(context, subscripted, NULL)) return false;
-	}
-	else
-	{
-		if (!sema_analyse_expr(context, subscripted)) return false;
+		case EXPR_CT_IDENT:
+			if (!sema_analyse_expr_lvalue(context, subscripted, NULL)) return false;
+			break;
+		case EXPR_SUBSCRIPT:
+		{
+			Expr *inner = expr_copy(subscripted);
+			subscripted->expr_kind = EXPR_UNARY;
+			subscripted->unary_expr.operator = UNARYOP_ADDR;
+			subscripted->unary_expr.expr = inner;
+
+			inner = expr_copy(subscripted);
+			subscripted->expr_kind = EXPR_UNARY;
+			subscripted->unary_expr.operator = UNARYOP_DEREF;
+			subscripted->unary_expr.expr = inner;
+			FALLTHROUGH;
+		}
+		default:
+			if (!sema_analyse_expr(context, subscripted)) return false;
+			break;
 	}
 
 	if (!sema_expr_check_assign(context, expr, NULL)) return false;
@@ -11781,7 +11799,7 @@ bool sema_insert_method_call(SemaContext *context, Expr *method_call, Decl *meth
 			.call_expr.is_func_ref = true,
 			.call_expr.is_type_method = true,
 	};
-	Type *type = parent->type->canonical;
+	Type *type = type_no_optional(parent->type)->canonical;
 	Decl *first_param = method_decl->func_decl.signature.params[0];
 	Type *first = first_param->type->canonical;
 	// Deref / addr as needed.
@@ -11796,7 +11814,7 @@ bool sema_insert_method_call(SemaContext *context, Expr *method_call, Decl *meth
 			if (!sema_expr_rewrite_insert_deref(context, parent)) return false;
 		}
 	}
-	ASSERT_SPAN(method_call, parent && parent->type && first == parent->type->canonical);
+	ASSERT_SPAN(method_call, first == type_no_optional(parent->type)->canonical);
 	unit_register_external_symbol(context, method_decl);
 	if (!sema_expr_analyse_general_call(context, method_call, method_decl, parent, false,
 										NULL)) return expr_poison(method_call);

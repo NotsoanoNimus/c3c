@@ -16,6 +16,8 @@
 - Deprecate `add_array` in favour of `push_all` on lists.
 - Fix max module name to 31 chars and the entire module path to 63 characters.
 - Improve error message for missing `$endif`.
+- `foo[x][y] = b` now interpreted as `(*&foo[x])[y] = b` which allows overloads to do chained [] accesses.
+- Error if a stack allocated variable is too big (configurable with `--max-stack-object-size`).
 
 ### Fixes
 - List.remove_at would incorrectly trigger ASAN.
@@ -51,6 +53,9 @@
 - Compiler assert when calling unassigned CT functions #2418.
 - Fixed crash in header generation when exporting functions with const enums (#2384).
 - Fix incorrect panic message when slicing with negative size.
+- Incorrect type checking when &[] and [] return optional values.
+- Failed to find subscript overloading on optional values.
+- `Socket.get_option` didn't properly call `getsockopt`, and `getsockopt` had an invalid signature.
 
 ### Stdlib changes
 - Add `==` to `Pair`, `Triple` and TzDateTime. Add print to `Pair` and `Triple`.
@@ -65,6 +70,10 @@
 - Add Freestanding OS types to runtime `env::` booleans.
 - Added libloaderapi to `std::os::win32`.
 - Added `HashSet.values` and `String.contains_char` #2386
+- Added `&[]` overload to HashMap.
+- Deprecated `PollSubscribes` and `PollEvents` in favour of `PollSubscribe` and `PollEvent` and made them const enums.
+- Added `AsciiCharset` for matching ascii characters quickly.
+- Added `String.trim_charset`.
 
 ## 0.7.4 Change list
 
