@@ -36,7 +36,7 @@
 - Formatter did not properly handle "null" for any, and null for empty faults. #2375
 - Bitstructs no longer overloadable with bitops. #2374
 - types::has_equals fails with assert for bitstructs #2377
-- Fix `native_cpus` functionality for OpenBSD systems. #2387
+- Fix `native_cpu` functionality for OpenBSD systems. #2387
 - Assert triggered when trying to slice a struct.
 - Improve codegen for stack allocated large non-zero arrays.
 - Implement `a5hash` in the compiler for compile-time `$$str_hash` to match `String.hash()`.
