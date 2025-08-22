@@ -59,7 +59,7 @@ macro char[] @ct_encode_length(NistEncodingType $direction, usz $length) @const
 }
 
 
-macro char[] encode_length(NistEncodingType $direction, usz length)
+macro char[] encode_length(NistEncodingType $direction, usz length, bool $as_direct_bytes = false)
 {
 	char[usz.sizeof + 1] buf;
 
@@ -76,9 +76,13 @@ macro char[] encode_length(NistEncodingType $direction, usz length)
 		end = byte_size;
 	$endif
 
-	buf[end] = (char)(length << 3);
-
-	usz len_sub = length >> 5;
+	$if $as_direct_bytes:
+		buf[end] = (char)length;
+		usz len_sub = length >> 8;
+	$else
+		buf[end] = (char)(length << 3);
+		usz len_sub = length >> 5;
+	$endif
 
 	for (usz i = 1; i < byte_size; ++i, len_sub >>= 8) buf[end - i] = (char)len_sub;
 
