@@ -14,8 +14,8 @@ enum NistFunctionName : int (String customizer)
 {
 	NONE = "",
 	KMAC = "KMAC",
-	PARALLEL_HASH = "ParallelHash",
 	TUPLE_HASH = "TupleHash",
+	PARALLEL_HASH = "ParallelHash",
 }
 
 
