@@ -39,16 +39,8 @@ fn void KmacContext.init(&self, char[] key, String optional_customization = "", 
 *>
 macro void KmacContext.final(&self, char[] out)
 {
-	if (self.is_xof_mode)
-	{
-		self.c.update(nist::@ct_encode_length(NistEncodingType.RIGHT, 0));
-	}
-	else
-	{
-		self.c.update(nist::encode_length(NistEncodingType.RIGHT, out.len));
-	}
-
-	self.c.final(out);
+	defer self.wipe();
+	self.squeeze(out);
 }
 
 <*
