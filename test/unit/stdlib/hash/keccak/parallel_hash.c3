@@ -38,7 +38,7 @@ fn void the_desperation_pays_off()
     // see Sample #1 from https://csrc.nist.rip/groups/ST/toolkit/documents/Examples/ParallelHash_samples.pdf
     char[] x = x"000102030405060710111213141516172021222324252627";
     int b = 8;   // block size of 8
-    int l = 256;   // want 256 bytes of hash (not XOF) output
+    int l = 256;   // want 32 bytes of hash (not XOF) output
 
     int n = (int)math::ceil(x.len / (float)b);
     test::@check(n == 3, "invalid block count `n`");
