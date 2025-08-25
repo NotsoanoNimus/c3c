@@ -3104,13 +3104,14 @@ static bool sema_call_analyse_body_expansion(SemaContext *macro_context, Expr *c
 
 }
 
+// Conversion MyEnum.FOO -> MyEnum.ordinal, will change the type.
 void sema_expr_convert_enum_to_int(Expr *expr)
 {
 	ASSERT(type_flatten(expr->type)->type_kind == TYPE_ENUM);
 	Type *underlying_type = type_base(expr->type);
 	if (sema_cast_const(expr))
 	{
-		ASSERT(expr->const_expr.const_kind == CONST_ENUM);
+		ASSERT(expr_is_const_enum(expr));
 		expr_rewrite_const_int(expr, underlying_type, expr->const_expr.enum_val->enum_constant.inner_ordinal);
 	}
 	if (expr->expr_kind == EXPR_ENUM_FROM_ORD)
@@ -5972,9 +5973,9 @@ static inline bool sema_expr_analyse_access(SemaContext *context, Expr *expr, bo
 	{
 		return sema_expr_analyse_type_access(context, expr, parent->type_expr->type, identifier, missing_ref);
 	}
-	if (parent->expr_kind == EXPR_IDENTIFIER)
+	if (parent->expr_kind == EXPR_IDENTIFIER || expr_is_const_ref(parent))
 	{
-		Decl *decl = parent->ident_expr;
+		Decl *decl = parent->expr_kind == EXPR_IDENTIFIER ? parent->ident_expr : parent->const_expr.global_ref;
 		switch (decl->decl_kind)
 		{
 			case DECL_FUNC:
@@ -8349,6 +8350,8 @@ static inline const char *sema_addr_may_take_of_ident(Expr *inner)
 			return sema_addr_may_take_of_var(inner, decl);
 		case DECL_MACRO:
 			return "It is not possible to take the address of a macro.";
+		case DECL_LABEL:
+			return "It is not possible to take the address of a label.";
 		default:
 			UNREACHABLE
 	}
@@ -10082,8 +10085,8 @@ static inline bool sema_expr_analyse_generic_ident(SemaContext *context, Expr *e
 		RETURN_SEMA_ERROR(parent, "Expected an identifier to parameterize.");
 	}
 	Decl *symbol = sema_analyse_parameterized_identifier(context, parent->unresolved_ident_expr.path,
-														 parent->unresolved_ident_expr.ident, parent->span,
-														 expr->generic_ident_expr.parameters, NULL);
+	                                                     parent->unresolved_ident_expr.ident, parent->span,
+	                                                     expr->generic_ident_expr.parameters, NULL, expr->span);
 	if (!decl_ok(symbol)) return false;
 	expr_resolve_ident(expr, symbol);
 	return true;
@@ -10216,6 +10219,7 @@ static inline bool sema_expr_analyse_lambda(SemaContext *context, Type *target_t
 		{
 			decl->var.is_read = true;
 		}
+		decl->is_external_visible = true;
 		vec_add(unit->module->lambdas_to_evaluate, decl);
 	}
 	else
@@ -10411,7 +10415,6 @@ static inline bool sema_expr_analyse_ct_defined(SemaContext *context, Expr *expr
 			case EXPR_OPERATOR_CHARS:
 			case EXPR_MACRO_BODY_EXPANSION:
 			case EXPR_BUILTIN_ACCESS:
-			case EXPR_DECL:
 			case EXPR_LAST_FAULT:
 			case EXPR_DEFAULT_ARG:
 			case EXPR_IDENTIFIER:
@@ -10420,6 +10423,13 @@ static inline bool sema_expr_analyse_ct_defined(SemaContext *context, Expr *expr
 			case EXPR_CT_SUBSCRIPT:
 			case EXPR_IOTA_DECL:
 				UNREACHABLE
+			case EXPR_DECL:
+				if (!sema_analyse_var_decl(context, main_expr->decl_expr, true, &failed))
+				{
+					if (!failed) goto FAIL;
+					success = false;
+				}
+				break;
 			case EXPR_BINARY:
 				main_expr->resolve_status = RESOLVE_RUNNING;
 				if (!sema_expr_analyse_binary(active_context, NULL, main_expr, &failed))
@@ -10936,7 +10946,7 @@ static inline bool sema_analyse_expr_dispatch(SemaContext *context, Expr *expr, 
 		{
 			Decl *decl = expr->decl_expr;
 			bool erase = decl->var.kind == VARDECL_LOCAL_CT_TYPE || decl->var.kind == VARDECL_LOCAL_CT;
-			if (!sema_analyse_var_decl(context, decl, true)) return false;
+			if (!sema_analyse_var_decl(context, decl, true, NULL)) return false;
 			if (decl->decl_kind == DECL_ERASED)
 			{
 				expr->expr_kind = EXPR_NOP;

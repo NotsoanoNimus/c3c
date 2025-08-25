@@ -20,6 +20,9 @@
 - Error if a stack allocated variable is too big (configurable with `--max-stack-object-size`).
 - Add `@safeinfer` to allow `var` to be used locally.
 - Types converts to typeid implicitly.
+- Allow `$defined` take declarations: `$defined(int x = y)`
+- Struct and typedef subtypes inherit dynamic functions.
+- Improved directory creation error messages in project and library creation commands.
 
 ### Fixes
 - List.remove_at would incorrectly trigger ASAN.
@@ -58,6 +61,11 @@
 - Incorrect type checking when &[] and [] return optional values.
 - Failed to find subscript overloading on optional values.
 - `Socket.get_option` didn't properly call `getsockopt`, and `getsockopt` had an invalid signature.
+- Taking the address of a label would cause a crash. #2430
+- `@tag` was not allowed to repeat.
+- Lambdas on the top level were not exported by default. #2428
+- `has_tagof` on tagged lambdas returns false #2432
+- Properly add "inlined at" for generic instantiation errors #2382.
 
 ### Stdlib changes
 - Add `==` to `Pair`, `Triple` and TzDateTime. Add print to `Pair` and `Triple`.
@@ -76,6 +84,7 @@
 - Deprecated `PollSubscribes` and `PollEvents` in favour of `PollSubscribe` and `PollEvent` and made them const enums.
 - Added `AsciiCharset` for matching ascii characters quickly.
 - Added `String.trim_charset`.
+- Added array `@reduce`, `@filter`, `@any`, `@all`, `@sum`, `@product`, and `@indices_of` macros.
 
 ## 0.7.4 Change list
 

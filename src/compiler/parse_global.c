@@ -888,6 +888,16 @@ Expr *parse_decl_or_expr(ParseContext *c)
 	// If it's not a type info, we assume an expr.
 	if (expr->expr_kind != EXPR_TYPEINFO) return expr;
 
+	switch (c->tok)
+	{
+		case TOKEN_RPAREN:
+		case TOKEN_RBRACKET:
+		case TOKEN_RBRACE:
+		case TOKEN_RVEC:
+			return expr;
+		default:
+			break;
+	}
 	// Otherwise we expect a declaration.
 	ASSIGN_DECL_OR_RET(decl, parse_local_decl_after_type(c, expr->type_expr), poisoned_expr);
 DECL:
@@ -1277,12 +1287,14 @@ static inline bool parse_attribute_list(ParseContext *c, Attr ***attributes_ref,
 				*visibility_ref = visibility = parsed_visibility;
 				continue;
 			}
+			if (attr->attr_kind == ATTRIBUTE_TAG) goto ADD;
 		}
 		const char *name = attr->name;
 		FOREACH(Attr *, other_attr, *attributes_ref)
 		{
 			if (other_attr->name == name) RETURN_PRINT_ERROR_AT(false, attr, "Repeat of attribute '%s' here.", name);
 		}
+ADD:
 		vec_add(*attributes_ref, attr);
 		if (use_comma && !try_consume(c, TOKEN_COMMA)) break;
 	}
