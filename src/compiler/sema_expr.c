@@ -10268,6 +10268,7 @@ ERROR:
 
 static inline bool sema_expr_analyse_ct_is_const(SemaContext *context, Expr *expr)
 {
+	SEMA_DEPRECATED(expr, "$is_const is deprecated, use '$defined(var $e = expr)' instead.");
 	ASSERT_SPAN(expr, expr->resolve_status == RESOLVE_RUNNING);
 	Expr *inner = expr->inner_expr;
 	if (!sema_analyse_expr(context, inner)) return false;
@@ -10618,7 +10619,7 @@ static inline bool sema_expr_analyse_iota_decl(SemaContext *context, Expr *expr)
 
 static inline bool sema_expr_analyse_assignable(SemaContext *context, Expr *expr)
 {
-	SEMA_DEPRECATED(expr, "$assignable is deprecated, use the '@assignable_to' macro instead.");
+	SEMA_DEPRECATED(expr, "$assignable is deprecated, use '$defined(Type t = expr)' instead.");
 	ASSERT_SPAN(expr, expr->resolve_status == RESOLVE_RUNNING);
 	Expr *type_expr = exprptr(expr->assignable_expr.type);
 	bool in_no_eval = context->call_env.in_no_eval;
@@ -11315,7 +11316,7 @@ RETRY:
 			goto IDENT_CHECK;
 		case EXPR_UNRESOLVED_IDENTIFIER:
 			if (!sema_analyse_expr_dispatch(context, expr, CHECK_VALUE)) return false;
-			FALLTHROUGH;
+			goto RETRY;
 		case EXPR_IDENTIFIER:
 IDENT_CHECK:;
 		{
