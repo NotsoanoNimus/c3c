@@ -96,17 +96,37 @@ fn void ParallelHashContext.update(&self, Allocator allocator, char[] data, bool
 	// The allocator is only ever used locally, and no memory will ever leak from this, since all XOF results
 	//   from each thread are collapsed and free for each call to `update`.
 
+	if (!data.len) return;
+
+	if (@unlikely(self.offset > 0))
+	{
+		usz left = min(self.block_size - self.offset, data.len);
+
+		if (left > 0)
+		{
+			self.offset += left;
+			self.internal[self.offset:left] = data[:left];
+			data = data[left..];
+
+			if (self.offset < self.block_size) return;   // waiting for more or 'final'
+
+			self.c.update(apply_simple_cshake(self.internal[..])[..]);
+			self.offset = 0;
+
+			if (!data.len) return;
+		}
+	}
+
 	if (force_sequential || data.len < self.block_size)   // less than a block was received? don't thread at all
 	{
-		usz blocks = max(1, (data.len + self.offset) / self.block_size);
-		WorkerThreadContext thread_ctx = { 0, self, &allocator, 0, 0, data, allocator::new_array(allocator, char, INTERMEDIATE_XOF_SIZE * blocks) };
+		for (; data.len >= self.block_size; data = data[self.block_size..])
+		{
+			self.c.update(apply_simple_cshake(data[:self.block_size])[..]);
+		}
 
-		threaded_update(&thread_ctx);
-		defer allocator::free(allocator, thread_ctx.out.ptr);
+		if (data.len > 0) self.c.update(apply_simple_cshake(data[..])[..]);
 
-		for (usz i = 0; i < blocks; ++i) self.c.update(thread_ctx.out[i * INTERMEDIATE_XOF_SIZE : INTERMEDIATE_XOF_SIZE]);
 		self.total_len += data.len;
-
 		return;
 	}
 
@@ -124,13 +144,15 @@ fn void ParallelHashContext.update(&self, Allocator allocator, char[] data, bool
 	// round-robin distribute each thread block off the data length
 	//   if at any point the length is below the block size, punt it to thread 0
 	usz remainder = data.len;
-	for (usz i = 1, usz length = 0; ; length += self.block_size, ++i)
+	for (usz i = 0, usz length = 0; length < data.len; length += self.block_size, ++i)
 	{
-		if ((remainder = data.len - length) < self.block_size) break;
-
+		// if ((remainder = data.len - length) < self.block_size) break;
+io::printfn("LEN %d // Length %d", data.len, length);
 		contexts[i % self.thread_count].consume_len += self.block_size;
+		remainder = data.len - length;
 	}
-	contexts[0].consume_len += remainder;
+io::printfn("REM %d", remainder);
+	// contexts[0].consume_len += remainder;
 
 	// start each worker. threads work TOP-DOWN, meaning the workers[self.thread_count - 1] thread is handling the
 	//   START of the incoming data and thread 0 is handling the tail end of it (as well as handling uneven inputs)
@@ -172,6 +194,15 @@ io::eprintfn("NEW CONTEXT: id %d, %d bytes, %d clen, %d blocks", contexts[i-1].t
 		// fold all produced XOF chains into the main context's XOF chain
 		self.c.update(t.out);
 	}
+
+	if (@unlikely(remainder > 0))
+	{
+		// assert(ctx.thread_id == 0, "Thread IDs above 0 should NEVER have leftover/uneven data blocks to digest");
+
+		// there's some leftover data; hold it for the next call to 'update' or 'final'
+		self.internal[:remainder] = data[^remainder..];
+		self.offset = remainder;
+	}
 }
 
 <*
@@ -187,39 +218,9 @@ fn int threaded_update(void* arg) @local
 
 	if (!data.len) return 0;
 
-	if (ctx.thread_id == 0 && @unlikely(hash_ctx.offset > 0))
-	{
-		usz left = min(hash_ctx.block_size - hash_ctx.offset, data.len);
-
-		if (left > 0)
-		{
-			hash_ctx.offset += left;
-			hash_ctx.internal[hash_ctx.offset:left] = data[:left];
-			data = data[left..];
-
-			if (hash_ctx.offset < hash_ctx.block_size) return 0;
-
-			ctx.out[(ctx.xof_count++ * INTERMEDIATE_XOF_SIZE):INTERMEDIATE_XOF_SIZE] = apply_simple_cshake(hash_ctx.internal[..])[..];
-foreach (c : ctx.out[((ctx.xof_count-1) * INTERMEDIATE_XOF_SIZE):INTERMEDIATE_XOF_SIZE]) io::eprintf("%02x", c); io::eprintn("");
-
-			hash_ctx.offset = 0;
-		}
-	}
-
 	for (; data.len >= hash_ctx.block_size; data = data[hash_ctx.block_size..])
 	{
-		// assert(ctx.xof_count < blocks, "XOF count cannot exceed the number of allocated blocks");
-
 		ctx.out[(ctx.xof_count++ * INTERMEDIATE_XOF_SIZE):INTERMEDIATE_XOF_SIZE] = apply_simple_cshake(data[:hash_ctx.block_size])[..];
-	}
-
-	if (@unlikely(data.len > 0))
-	{
-		assert(ctx.thread_id == 0, "Thread IDs above 0 should NEVER have leftover/uneven data blocks to digest");
-
-		// there's some leftover data; hold it for the next call to 'update' or 'final'
-		hash_ctx.internal[:data.len] = data[..];
-		hash_ctx.offset = data.len;
 	}
 
 	return 0;
