@@ -81,6 +81,9 @@
 - Fix alignment on jump table.
 - Fix correct `?` after optional function name when reporting type errors.
 - Make `log` and `exp` no-strip.
+- `@test`/`@benchmark` on module would attach to interface and regular methods.
+- Add compile time ternary `$val ??? <expr> : <expr>`.
+- Deprecated `@select` in favor of `???`.
 
 ### Stdlib changes
 - Add `==` to `Pair`, `Triple` and TzDateTime. Add print to `Pair` and `Triple`.
