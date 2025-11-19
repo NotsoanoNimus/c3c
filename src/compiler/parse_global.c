@@ -205,7 +205,7 @@ static inline bool parse_optional_module_params(ParseContext *c, const char ***t
 	}
 }
 /**
- * module ::= MODULE module_path ('{' module_params '}')? (@public|@private|@local|@test|@export|@extern) EOS
+ * module ::= MODULE module_path ('{' module_params '}')? (@public|@private|@local|@test|@export|@cname) EOS
  */
 bool parse_module(ParseContext *c, AstId contracts)
 {
@@ -328,6 +328,24 @@ bool parse_module(ParseContext *c, AstId contracts)
 				{
 					RETURN_PRINT_ERROR_AT(false, attr,
 					                      "External name for the module may only be declared in one location.");
+				}
+				c->unit->module->extname = expr->const_expr.bytes.ptr;
+				SEMA_DEPRECATED(attr, "'@extern' is deprecated, use '@cname' instead.");
+				continue;
+			}
+			case ATTRIBUTE_CNAME:
+			{
+				if (vec_size(attr->exprs) != 1)
+				{
+					RETURN_PRINT_ERROR_AT(false, attr, "Expected 1 argument to '@cname(..), not %d'.",
+										  vec_size(attr->exprs));
+				}
+				Expr *expr = attr->exprs[0];
+				if (!expr_is_const_string(expr)) RETURN_PRINT_ERROR_AT(false, expr, "Expected a constant string.");
+				if (c->unit->module->extname)
+				{
+					RETURN_PRINT_ERROR_AT(false, attr,
+										  "External name for the module may only be declared in one location.");
 				}
 				c->unit->module->extname = expr->const_expr.bytes.ptr;
 				continue;
@@ -616,6 +634,16 @@ static inline TypeInfo *parse_vector_type_index(ParseContext *c, TypeInfo *type)
 	{
 		ASSIGN_EXPR_OR_RET(vector->array.len, parse_expr(c), poisoned_type_info);
 		CONSUME_OR_RET(TOKEN_RVEC, poisoned_type_info);
+	}
+	if (tok_is(c, TOKEN_AT_IDENT))
+	{
+		if (symstr(c) != kw_at_simd)
+		{
+			PRINT_ERROR_HERE("Only '@simd' is a valid attribute, found '%s'.", symstr(c));
+			return poisoned_type_info;
+		}
+		advance(c);
+		vector->is_simd = true;
 	}
 	RANGE_EXTEND_PREV(vector);
 	return vector;
@@ -1924,6 +1952,22 @@ static inline Decl *parse_typedef_declaration(ParseContext *c)
 
 	ASSERT(!tok_is(c, TOKEN_LBRACE));
 
+	while (tok_is(c, TOKEN_AT_IDENT))
+	{
+		const char *name = symstr(c);
+		if (name == kw_at_align)
+		{
+			advance_and_verify(c, TOKEN_AT_IDENT);
+			CONSUME_OR_RET(TOKEN_LPAREN, poisoned_decl);
+			ASSIGN_EXPR_OR_RET(decl->distinct_align, parse_expr(c), poisoned_decl);
+			CONSUME_OR_RET(TOKEN_RPAREN, poisoned_decl);
+		}
+		else
+		{
+			PRINT_ERROR_HERE("Expected only attribute '@align' here, if you want to add an attribute to the typedef itself, place it before the '='.");
+			return poisoned_decl;
+		}
+	}
 	RANGE_EXTEND_PREV(decl);
 	CONSUME_EOS_OR_RET(poisoned_decl);
 	return decl;
@@ -2143,13 +2187,15 @@ static inline void decl_add_type(Decl *decl, TypeKind kind)
 	type->decl = decl;
 	decl->type = type;
 }
+
+
 /**
  * typedef_declaration ::= ALIAS TYPE_IDENT attributes? '=' typedef_type ';'
  *
  * typedef_type ::= func_typedef | type generic_params?
  * func_typedef ::= 'fn' optional_type parameter_type_list
  */
-static inline Decl *parse_alias_type(ParseContext *c)
+static inline Decl *parse_alias_type(ParseContext *c, AstId contracts, bool has_real_contracts)
 {
 	advance_and_verify(c, TOKEN_ALIAS);
 
@@ -2160,7 +2206,7 @@ static inline Decl *parse_alias_type(ParseContext *c)
 		if (token_is_any_type(c->tok))
 		{
 			PRINT_ERROR_HERE("'%s' is the name of a built-in type and can't be used as an alias.",
-			                 token_type_to_string(c->tok));
+							 token_type_to_string(c->tok));
 			return poisoned_decl;
 		}
 		if (token_is_some_ident(c->tok))
@@ -2185,8 +2231,9 @@ static inline Decl *parse_alias_type(ParseContext *c)
 		Decl *decl_type = decl_new(DECL_FNTYPE, decl->name, c->prev_span);
 		decl->type_alias_decl.decl = decl_type;
 		ASSIGN_TYPE_OR_RET(TypeInfo *type_info, parse_optional_type(c), poisoned_decl);
-		decl_type->fntype_decl.rtype = type_infoid(type_info);
-		if (!parse_fn_parameter_list(c, &(decl_type->fntype_decl)))
+		decl_type->fntype_decl.signature.rtype = type_infoid(type_info);
+		decl_type->fntype_decl.docs = contracts;
+		if (!parse_fn_parameter_list(c, &(decl_type->fntype_decl.signature)))
 		{
 			return poisoned_decl;
 		}
@@ -2195,6 +2242,11 @@ static inline Decl *parse_alias_type(ParseContext *c)
 		RANGE_EXTEND_PREV(decl);
 		CONSUME_EOS_OR_RET(poisoned_decl);
 		return decl;
+	}
+
+	if (has_real_contracts)
+	{
+		RETURN_PRINT_ERROR_AT(poisoned_decl, astptr(contracts), "Contracts are only used for modules, functions and macros.");
 	}
 
 	// 2. Now parse the type which we know is here.
@@ -2375,13 +2427,17 @@ static inline Decl *parse_attrdef(ParseContext *c)
 /**
  * define_decl ::= ALIAS define_type_body
  */
-static inline Decl *parse_alias(ParseContext *c)
+static inline Decl *parse_alias(ParseContext *c, AstId contracts, bool has_real_contracts)
 {
 	switch (peek(c))
 	{
 		case TOKEN_TYPE_IDENT:
-			return parse_alias_type(c);
+			return parse_alias_type(c, contracts, has_real_contracts);
 		default:
+			if (has_real_contracts)
+			{
+				RETURN_PRINT_ERROR_AT(poisoned_decl, astptr(contracts), "Contracts are only used for modules, functions and macros.");
+			}
 			return parse_alias_ident(c);
 	}
 }
@@ -3022,13 +3078,16 @@ static inline bool parse_contract_param(ParseContext *c, AstId *docs, AstId **do
 		case TOKEN_CT_TYPE_IDENT:
 		case TOKEN_CONST_IDENT:
 		case TOKEN_HASH_IDENT:
+			ast->contract_stmt.param.name = symstr(c);
+			break;
+		case TOKEN_ELLIPSIS:
+			ast->contract_stmt.param.name = NULL;
 			break;
 		default:
 			RETURN_PRINT_ERROR_HERE("Expected a parameter name here.");
 	}
-	ast->contract_stmt.param.name = symstr(c);
-	ast->contract_stmt.param.span = c->span;
 	ast->contract_stmt.param.modifier = mod;
+	ast->contract_stmt.param.span = c->span;
 	ast->contract_stmt.param.by_ref = is_ref;
 	advance(c);
 
@@ -3297,8 +3356,7 @@ Decl *parse_top_level_statement(ParseContext *c, ParseContext **context_out)
 			PRINT_ERROR_HERE("There are more than one doc comment in a row, that is not allowed.");
 			return poisoned_decl;
 		case TOKEN_ALIAS:
-			if (has_real_contracts) goto CONTRACT_NOT_ALLOWED;
-			decl = parse_alias(c);
+			decl = parse_alias(c, contracts, has_real_contracts);
 			if (decl->decl_kind == DECL_ALIAS_PATH)
 			{
 				if (!context_out)

@@ -7,13 +7,16 @@
 
 
 const char *project_default_keys[][2] = {
+		{"$schema", "Json schema url"},
 		{"authors", "Authors, optionally with email."},
 		{"benchfn", "Override the benchmark function."},
+		{"build-dir", "Build location, where intermediate files are placed by default, relative to project file."},
 		{"c-include-dirs", "Set the include directories for C sources."},
 		{"c-sources", "Set the C sources to be compiled."},
 		{"cc", "Set C compiler (defaults to 'cc')."},
 		{"cflags", "C compiler flags."},
 		{"cpu", "CPU name, used for optimizations in the compiler backend."},
+		{"cpu-flags", "Set the cpu flags to add or remove with the format '+avx,-sse'."},
 		{"debug-info", "Debug level: none, line-tables, full."},
 		{"dependencies", "C3 library dependencies for all targets."},
 		{"dependency-search-paths", "The C3 library search paths."},
@@ -43,6 +46,8 @@ const char *project_default_keys[][2] = {
 		{"panicfn", "Override the panic function."},
 		{"quiet", "Silence unnecessary output."},
 		{"reloc", "Relocation model: none, pic, PIC, pie, PIE."},
+		{"riscv-abi", "RiscV ABI: int-only, float, double."},
+		{"riscv-cpu", "Set general level of RISC-V cpu: `rvi`, `rvimac`, `rvimafc`, `rvgc` or `rvgcv`."},
 		{"run-dir", "Override run directory for 'run'."},
 		{"safe", "Set safety (contracts, runtime bounds checking, null pointer checks etc) on or off."},
 		{"sanitize", "Enable sanitizer: none, address, memory, thread."},
@@ -77,6 +82,7 @@ const int project_default_keys_count = ELEMENTLEN(project_default_keys);
 const char* project_deprecated_target_keys[] = { "xxxxxxxxxx" };
 const char* project_target_keys[][2] = {
 		{"benchfn", "Override the benchmark function."},
+		{"build-dir", "Build location, where intermediate files are placed by default, relative to project file."},
 		{"c-include-dirs", "C sources include directories for the target."},
 		{"c-include-dirs-override", "Additional C sources include directories for the target, overriding global settings."},
 		{"c-sources", "Additional C sources to be compiled for the target."},
@@ -85,6 +91,8 @@ const char* project_target_keys[][2] = {
 		{"cflags", "Additional C compiler flags for the target."},
 		{"cflags-override", "C compiler flags for the target, overriding global settings."},
 		{"cpu", "CPU name, used for optimizations in the compiler backend."},
+		{"cpu-flags", "Additional cpu flags to add or remove with the format '+avx,-sse'."},
+		{"cpu-flags-override", "Additional cpu flags to add or remove with the format '+avx,-sse', overriding global settings."},
 		{"debug-info", "Debug level: none, line-tables, full."},
 		{"dependencies", "Additional C3 library dependencies for the target."},
 		{"dependencies-override", "C3 library dependencies for this target, overriding global settings."},
@@ -122,6 +130,7 @@ const char* project_target_keys[][2] = {
 		{"panicfn", "Override the panic function."},
 		{"quiet", "Silence unnecessary output."},
 		{"reloc", "Relocation model: none, pic, PIC, pie, PIE."},
+		{"riscv-abi", "RiscV ABI: int-only, float, double."},
 		{"run-dir", "Override run directory for 'run'."},
 		{"safe", "Set safety (contracts, runtime bounds checking, null pointer checks etc) on or off."},
 		{"sanitize", "Enable sanitizer: none, address, memory, thread."},
@@ -182,6 +191,34 @@ static void load_into_build_target(BuildParseContext context, JSONObject *json, 
 	target->run_dir = get_string(context, json, "run-dir", target->run_dir);
 	// The output directory
 	target->output_dir = get_string(context, json, "output", target->output_dir);
+	target->build_dir = get_string(context, json, "build-dir", target->build_dir);
+
+	const char *cpu_flags = get_optional_string(context, json, "cpu-flags");
+	if (cpu_flags)
+	{
+		if (target->cpu_flags)
+		{
+			scratch_buffer_clear();
+			scratch_buffer_printf("%s,%s", target->cpu_flags, cpu_flags);
+			target->cpu_flags = scratch_buffer_copy();
+		}
+		else
+		{
+			target->cpu_flags = cpu_flags;
+		}
+	}
+	if (context.target)
+	{
+		const char *cpu_flags_override = get_optional_string(context, json, "cpu-flags-override");
+		if (cpu_flags_override)
+		{
+			if (cpu_flags)
+			{
+				error_exit("Error reading %s: 'cpu-flags' and 'cpu-flags-override' cannot be combined.", context.file);
+			}
+			target->cpu_flags = cpu_flags_override;
+		}
+	}
 
 	if (context.target)
 	{
@@ -404,13 +441,17 @@ static void load_into_build_target(BuildParseContext context, JSONObject *json, 
 	X86VectorCapability x86vec = GET_SETTING(X86VectorCapability, "x86vec", x86_vector_capability, "`none`, `native`, `mmx`, `sse`, `avx` or `avx512`.");
 	if (x86vec > -1) target->feature.x86_vector_capability = x86vec;
 
-	// x86vec
+	// x86cpu
 	X86CpuSet x86cpu = GET_SETTING(X86CpuSet, "x86cpu", x86_cpu_set, "`baseline`, `ssse3`, `sse4`, `avx1`, `avx2-v1`, `avx2-v2`, `avx512` or `native`.");
 	if (x86cpu > X86CPU_DEFAULT) target->feature.x86_cpu_set = x86cpu;
 
-	// riscvfloat
-	RiscvFloatCapability riscv_float = GET_SETTING(RiscvFloatCapability, "riscvfloat", riscv_capability, "`none`, `float` or `double`.");
-	if (riscv_float != RISCVFLOAT_DEFAULT) target->feature.riscv_float_capability = riscv_float;
+	// riscv-cpu
+	RiscvCpuSet riscv_cpu = GET_SETTING(RiscvCpuSet, "riscv-cpu", riscv_cpu_set, "`rvi`, `rvimac`, `rvimafc`, `rvgc` or `rvgcv`.");
+	if (riscv_cpu > RISCV_CPU_DEFAULT) target->feature.riscv_cpu_set = riscv_cpu;
+
+	// riscv-abi
+	RiscvAbi riscv_abi_val = GET_SETTING(RiscvAbi, "riscv-abi", riscv_abi, "`int-only`, `float` or `double`.");
+	if (riscv_abi_val != RISCV_ABI_DEFAULT) target->feature.riscv_abi = riscv_abi_val;
 
 	// win-debug
 	WinDebug win_debug = GET_SETTING(WinDebug , "win-debug", win_debug_type, "`codeview` or `dwarf`.");

@@ -172,9 +172,11 @@ static void usage(bool full)
 		print_opt("--benchfn <name>", "Override the benchmark runner function name.");
 		PRINTF("");
 		print_opt("--reloc=<option>", "Relocation model: none, pic, PIC, pie, PIE.");
+		print_opt("--cpu-flags <string>", "Add/remove cpu flags fromt the default, e.g. '+a,-b'.");
 		print_opt("--x86cpu=<option>", "Set general level of x64 cpu: baseline, ssse3, sse4, avx1, avx2-v1, avx2-v2 (Skylake/Zen1+), avx512 (Icelake/Zen4+), native.");
 		print_opt("--x86vec=<option>", "Set max type of vector use: none, mmx, sse, avx, avx512, default.");
-		print_opt("--riscvfloat=<option>", "Set type of RISC-V float support: none, float, double.");
+		print_opt("--riscv-abi=<option>", "Set type of RISC-V ABI: int-only, float, double.");
+		print_opt("--riscv-cpu=<option>", "Set the general level of RISC-V cpu: rvi (default 32-bit) , rvimac, rvimafc, rvgc (default 64-bit), rvgcv.");
 		print_opt("--memory-env=<option>", "Set the memory environment: normal, small, tiny, none.");
 		print_opt("--strip-unused=<yes|no>", "Strip unused code and globals from the output. (default: yes)");
 		print_opt("--fp-math=<option>", "FP math behaviour: strict, relaxed, fast.");
@@ -182,6 +184,7 @@ static void usage(bool full)
 		print_opt("--win-debug=<option>", "Select debug output on Windows: codeview or dwarf (default: codeview).");
 		print_opt("--max-vector-size <number>", "Set the maximum vector bit size to allow (default: 4096).");
 		print_opt("--max-stack-object-size <number>", "Set the maximum size of a stack object in KB (default: 128).");
+		print_opt("--max-macro-iterations <number>", "Set the maximum number of iterations in a macro loop (default: 1048575).");
 		PRINTF("");
 		print_opt("--print-linking", "Print linker arguments.");
 		PRINTF("");
@@ -963,17 +966,48 @@ static void parse_option(BuildOptions *options)
 				options->x86_cpu_set = parse_opt_select(X86CpuSet, argopt, x86_cpu_set);
 				return;
 			}
+			if ((argopt = match_argopt("riscv-cpu")))
+			{
+				options->riscv_cpu_set = parse_opt_select(RiscvCpuSet, argopt, riscv_cpu_set);
+				return;
+			}
 			if ((argopt = match_argopt("riscvfloat")))
 			{
-				options->riscv_float_capability = parse_opt_select(RiscvFloatCapability, argopt, riscv_capability);
+				options->riscv_abi = parse_opt_select(RiscvAbi, argopt, riscv_capability);
+				return;
+			}
+			if ((argopt = match_argopt("riscv-abi")))
+			{
+				options->riscv_abi = parse_opt_select(RiscvAbi, argopt, riscv_abi);
+				return;
+			}
+			if (match_longopt("cpu-flags"))
+			{
+				if (at_end() || next_is_opt()) error_exit("error: --cpu-flags expected a comma-separated list, like '+a,-b,+x'.");
+				scratch_buffer_clear();
+				if (options->cpu_flags)
+				{
+					scratch_buffer_append(options->cpu_flags);
+					scratch_buffer_append_char(',');
+				}
+				scratch_buffer_append(next_arg());
+				options->cpu_flags = scratch_buffer_copy();
 				return;
 			}
 			if (match_longopt("max-stack-object-size"))
 			{
 				int size = (at_end() || next_is_opt()) ? 0 : atoi(next_arg());
 				if (size < 1) error_exit("Expected a valid positive integer >= 1 for --max-stack-object-size.");
-				if (size > MAX_STACK_OBJECT_SIZE) error_exit("Expected a valid positive integer <= %u for --max-vector-size.", (unsigned)MAX_STACK_OBJECT_SIZE);
+				if (size > MAX_STACK_OBJECT_SIZE) error_exit("Expected a valid positive integer <= %u for --max-stack-object-size.", (unsigned)MAX_STACK_OBJECT_SIZE);
 				options->max_stack_object_size = size;
+				return;
+			}
+			if (match_longopt("max-macro-iterations"))
+			{
+				int size = (at_end() || next_is_opt()) ? 0 : atoi(next_arg());
+				if (size < 1) error_exit("Expected a valid positive integer >= 128 for --max-macro-iterations");
+				if (size > MAX_MACRO_ITERATIONS) error_exit("Expected a valid positive integer <= %u for --max-macro-iterations.", (unsigned)MAX_MACRO_ITERATIONS);
+				options->max_macro_iterations = size;
 				return;
 			}
 			if (match_longopt("max-vector-size"))
@@ -1436,7 +1470,7 @@ BuildOptions parse_arguments(int argc, const char *argv[])
 		.win_debug = WIN_DEBUG_DEFAULT,
 		.fp_math = FP_DEFAULT,
 		.x86_cpu_set = X86CPU_DEFAULT,
-		.riscv_float_capability = RISCVFLOAT_DEFAULT,
+		.riscv_abi = RISCV_ABI_DEFAULT,
 		.memory_environment = MEMORY_ENV_NOT_SET,
 		.win.crt_linking = WIN_CRT_DEFAULT,
 		.emit_stdlib = EMIT_STDLIB_NOT_SET,

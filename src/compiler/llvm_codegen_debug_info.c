@@ -561,7 +561,7 @@ static LLVMMetadataRef llvm_debug_vector_type(GenContext *c, Type *type)
 {
 	LLVMMetadataRef *ranges = NULL;
 	Type *current_type = type;
-	while (current_type->canonical->type_kind == TYPE_VECTOR)
+	while (type_kind_is_any_vector(current_type->canonical->type_kind))
 	{
 		vec_add(ranges, LLVMDIBuilderGetOrCreateSubrange(c->debug.builder, 0, current_type->canonical->array.len));
 		current_type = current_type->canonical->array.base;
@@ -577,10 +577,11 @@ static LLVMMetadataRef llvm_debug_vector_type(GenContext *c, Type *type)
 static LLVMMetadataRef llvm_debug_func_type(GenContext *c, Type *type)
 {
 	FunctionPrototype *prototype = type_get_resolved_prototype(type);
+	Signature *sig = prototype->raw_type->function.signature;
 	// 1. Generate all the parameter types, this may cause this function to be called again!
-	FOREACH(Type *, param_type, prototype->param_types)
+	FOREACH(Decl *, param, sig->params)
 	{
-		llvm_get_debug_type(c, param_type);
+		llvm_get_debug_type(c, param->type);
 	}
 	// 2. We might be done!
 	if (type->backend_debug_type) return type->backend_debug_type;
@@ -588,19 +589,10 @@ static LLVMMetadataRef llvm_debug_func_type(GenContext *c, Type *type)
 	// 3. Otherwise generate:
 	static LLVMMetadataRef *buffer = NULL;
 	vec_resize(buffer, 0);
-	Type *return_type = prototype->rtype;
-	if (!type_is_optional(return_type))
+	vec_add(buffer, llvm_get_debug_type(c, typeget(sig->rtype)));
+	FOREACH(Decl *, param, sig->params)
 	{
-		vec_add(buffer, llvm_get_debug_type(c, return_type));
-	}
-	else
-	{
-		vec_add(buffer, llvm_get_debug_type(c, type_fault));
-		vec_add(buffer, llvm_get_debug_type(c, type_get_ptr(type_no_optional(return_type))));
-	}
-	FOREACH(Type *, param_type, prototype->param_types)
-	{
-		vec_add(buffer, llvm_get_debug_type(c, param_type));
+		vec_add(buffer, llvm_get_debug_type(c, param->type));
 	}
 	if (prototype->raw_variadic)
 	{
@@ -649,7 +641,7 @@ static inline LLVMMetadataRef llvm_get_debug_type_internal(GenContext *c, Type *
 		case TYPE_F64:
 		case TYPE_F128:
 			return llvm_debug_simple_type(c, type, DW_ATE_float);
-		case TYPE_VECTOR:
+		case VECTORS:
 			return type->backend_debug_type = llvm_debug_vector_type(c, type);
 		case TYPE_VOID:
 			return NULL;

@@ -8,7 +8,7 @@ static inline LLVMTypeRef llvm_type_from_decl(GenContext *c, Decl *decl);
 
 static inline LLVMTypeRef llvm_type_from_array(GenContext *context, Type *type);
 static void param_expand(GenContext *context, LLVMTypeRef** params_ref, Type *type);
-static inline void add_func_type_param(GenContext *c, Type *param_type, ABIArgInfo *arg_info, LLVMTypeRef **params);
+static inline void add_func_type_param(GenContext *c, ABIArgInfo *arg_info, LLVMTypeRef **params);
 
 static inline LLVMTypeRef llvm_type_from_decl(GenContext *c, Decl *decl)
 {
@@ -42,7 +42,7 @@ static inline LLVMTypeRef llvm_type_from_decl(GenContext *c, Decl *decl)
 				{
 					vec_add(types, llvm_const_padding_type(c, member->padding));
 				}
-				vec_add(types, llvm_get_type(c, member->type));
+				vec_add(types, llvm_get_type(c, lowered_member_type(member)));
 			}
 			if (decl->strukt.padding)
 			{
@@ -103,6 +103,7 @@ static void param_expand(GenContext *context, LLVMTypeRef** params_ref, Type *ty
 		case TYPE_ALIAS:
 			UNREACHABLE_VOID
 		case TYPE_ARRAY:
+		case VECTORS:
 			for (ArraySize i = type->array.len; i > 0; i--)
 			{
 				param_expand(context, params_ref, type->array.base);
@@ -112,7 +113,7 @@ static void param_expand(GenContext *context, LLVMTypeRef** params_ref, Type *ty
 		{
 			FOREACH(Decl *, member, type->decl->strukt.members)
 			{
-				param_expand(context, params_ref, member->type);
+				param_expand(context, params_ref, lowered_member_type(member));
 			}
 			return;
 		}
@@ -128,11 +129,11 @@ static void param_expand(GenContext *context, LLVMTypeRef** params_ref, Type *ty
 			// after flattening. Thus we have to use the "largest" field.
 			FOREACH(Decl *, member, type->decl->strukt.members)
 			{
-				Type *member_type = member->type;
+				Type *member_type = lowered_member_type(member);
 				if (type_size(member_type) > largest)
 				{
 					largest = type_size(member_type);
-					largest_type = type_flatten(member_type);
+					largest_type = member_type;
 				}
 			}
 			if (!largest) return;
@@ -147,8 +148,9 @@ static void param_expand(GenContext *context, LLVMTypeRef** params_ref, Type *ty
 	UNREACHABLE_VOID
 }
 
-static inline void add_func_type_param(GenContext *c, Type *param_type, ABIArgInfo *arg_info, LLVMTypeRef **params)
+static inline void add_func_type_param(GenContext *c, ABIArgInfo *arg_info, LLVMTypeRef **params)
 {
+	Type *param_type = arg_info->original_type;
 	arg_info->param_index_start = (ArrayIndex)vec_size(*params);
 	switch (arg_info->kind)
 	{
@@ -187,7 +189,7 @@ static inline void add_func_type_param(GenContext *c, Type *param_type, ABIArgIn
 		case ABI_ARG_DIRECT_COERCE:
 		{
 			// Normal direct.
-			vec_add(*params, llvm_get_type(c, arg_info->direct_coerce_type));
+			vec_add(*params, llvm_abi_type(c, arg_info->direct_coerce_type));
 			break;
 		}
 		case ABI_ARG_DIRECT_PAIR:
@@ -202,7 +204,7 @@ static inline void add_func_type_param(GenContext *c, Type *param_type, ABIArgIn
 LLVMTypeRef llvm_update_prototype_abi(GenContext *c, FunctionPrototype *prototype, LLVMTypeRef **params)
 {
 	LLVMTypeRef retval = NULL;
-	Type *call_return_type = prototype->abi_ret_type;
+	Type *call_return_type = prototype->return_info.type;
 	ABIArgInfo *ret_arg_info = prototype->ret_abi_info;
 
 	ret_arg_info->param_index_end = 0;
@@ -242,25 +244,19 @@ LLVMTypeRef llvm_update_prototype_abi(GenContext *c, FunctionPrototype *prototyp
 			retval = LLVMIntTypeInContext(c->context, type_size(call_return_type) * 8);
 			break;
 		case ABI_ARG_DIRECT_COERCE:
-			retval = llvm_get_type(c, ret_arg_info->direct_coerce_type);
+			retval = llvm_abi_type(c, ret_arg_info->direct_coerce_type);
 			break;
 	}
 
-	// If it's optional and it's not void (meaning ret_abi_info will be NULL)
-	if (prototype->ret_by_ref)
-	{
-		add_func_type_param(c, type_get_ptr(type_lowering(prototype->ret_by_ref_type)), prototype->ret_by_ref_abi_info, params);
-	}
-
 	// Add in all of the required arguments.
-	FOREACH_IDX(i, Type *, type, prototype->param_types)
+	for (unsigned i = 0; i < prototype->param_count; i++)
 	{
-		add_func_type_param(c, type, prototype->abi_args[i], params);
+		add_func_type_param(c, prototype->abi_args[i], params);
 	}
 
-	FOREACH_IDX(j, Type *, type, prototype->varargs)
+	for (unsigned i = 0; i < prototype->param_vacount; i++)
 	{
-		add_func_type_param(c, type, prototype->abi_varargs[j], params);
+		add_func_type_param(c, prototype->abi_varargs[i], params);
 	}
 	return retval;
 }
@@ -278,7 +274,9 @@ LLVMTypeRef llvm_get_pointee_type(GenContext *c, Type *any_type)
 	any_type = type_lowering(any_type);
 	ASSERT(any_type->type_kind == TYPE_POINTER);
 	if (any_type == type_voidptr) return llvm_get_type(c, type_char);
-	return llvm_get_type(c, any_type->pointer);
+	Type *pointee = any_type->pointer;
+//	ASSERT(type_flatten(pointee)->type_kind != TYPE_VECTOR);
+	return llvm_get_type(c, pointee);
 }
 
 bool llvm_types_are_similar(LLVMTypeRef original, LLVMTypeRef coerce)
@@ -302,7 +300,7 @@ LLVMTypeRef llvm_get_type(GenContext *c, Type *any_type)
 		ASSERT(LLVMGetTypeContext(any_type->backend_type) == c->context && "Should have been purged");
 		return any_type->backend_type;
 	}
-	Type *type = type_lowering(any_type);
+	LoweredType *type = type_lowering(any_type);
 	if (type != any_type)
 	{
 		return any_type->backend_type = llvm_get_type(c, type);
@@ -355,7 +353,7 @@ LLVMTypeRef llvm_get_type(GenContext *c, Type *any_type)
 			LLVMStructSetBody(virtual_type, types, 2, false);
 			return any_type->backend_type = virtual_type;
 		}
-		case TYPE_VECTOR:
+		case VECTORS:
 			return any_type->backend_type = LLVMVectorType(llvm_get_type(c, any_type->array.base), any_type->array.len);
 	}
 	UNREACHABLE;
@@ -404,7 +402,26 @@ LLVMTypeRef llvm_get_twostruct(GenContext *context, LLVMTypeRef lo, LLVMTypeRef 
 LLVMTypeRef llvm_abi_type(GenContext *c, AbiType type)
 {
 	if (abi_type_is_type(type)) return llvm_get_type(c, type.type);
-	return LLVMIntTypeInContext(c->context, type.int_bits_plus_1 - 1);
+	switch (type.abi_type)
+	{
+		case ABI_TYPE_INT_24:         return LLVMIntTypeInContext(c->context, 24);
+		case ABI_TYPE_INT_40:         return LLVMIntTypeInContext(c->context, 40);
+		case ABI_TYPE_INT_48:         return LLVMIntTypeInContext(c->context, 48);
+		case ABI_TYPE_INT_56:         return LLVMIntTypeInContext(c->context, 56);
+		case ABI_TYPE_INT_VEC_2:      return LLVMVectorType(LLVMIntTypeInContext(c->context, 32), 2);
+		case ABI_TYPE_INT_VEC_4:      return LLVMVectorType(LLVMIntTypeInContext(c->context, 32), 4);
+		case ABI_TYPE_FLOAT_VEC_2:    return LLVMVectorType(LLVMFloatTypeInContext(c->context), 2);
+		case ABI_TYPE_FLOAT_VEC_4:    return LLVMVectorType(LLVMFloatTypeInContext(c->context), 4);
+		case ABI_TYPE_FLOAT16_VEC_2:  return LLVMVectorType(LLVMHalfTypeInContext(c->context), 2);
+		case ABI_TYPE_FLOAT16_VEC_4:  return LLVMVectorType(LLVMHalfTypeInContext(c->context), 4);
+		case ABI_TYPE_BFLOAT16_VEC_2: return LLVMVectorType(LLVMBFloatTypeInContext(c->context), 2);
+		case ABI_TYPE_BFLOAT16_VEC_4: return LLVMVectorType(LLVMBFloatTypeInContext(c->context), 4);
+		case ABI_TYPE_LONG_VEC_2:     return LLVMVectorType(LLVMIntTypeInContext(c->context, 64), 2);
+		case ABI_TYPE_DOUBLE_VEC_2:   return LLVMVectorType(LLVMDoubleTypeInContext(c->context), 2);
+		case ABI_TYPE_DOUBLE_VEC_4:   return LLVMVectorType(LLVMDoubleTypeInContext(c->context), 4);
+		case ABI_TYPE_DOUBLE_VEC_8:   return LLVMVectorType(LLVMDoubleTypeInContext(c->context), 8);
+	}
+	UNREACHABLE;
 }
 
 
@@ -417,7 +434,7 @@ static inline LLVMValueRef llvm_generate_temp_introspection_global(GenContext *c
 }
 
 static inline LLVMValueRef llvm_generate_introspection_global(GenContext *c, LLVMValueRef original_global, Type *type, IntrospectType introspect_type,
-															  Type *inner, size_t len, LLVMValueRef additional, bool is_external)
+	Type *inner, size_t len, LLVMValueRef additional, bool is_external)
 {
 	// Push the builder
 	void *builder = c->builder;
@@ -609,7 +626,7 @@ LLVMValueRef llvm_get_typeid(GenContext *c, Type *type)
 			return llvm_generate_introspection_global(c, NULL, type, INTROSPECT_TYPE_OPTIONAL, type->optional, 0, NULL, false);
 		case TYPE_FLEXIBLE_ARRAY:
 			return llvm_generate_introspection_global(c, NULL, type, INTROSPECT_TYPE_ARRAY, type->array.base, 0, NULL, false);
-		case TYPE_VECTOR:
+		case VECTORS:
 			return llvm_generate_introspection_global(c, NULL, type, INTROSPECT_TYPE_VECTOR, type->array.base, type->array.len, NULL, false);
 		case TYPE_ARRAY:
 			return llvm_generate_introspection_global(c, NULL, type, INTROSPECT_TYPE_ARRAY, type->array.base, type->array.len, NULL, false);

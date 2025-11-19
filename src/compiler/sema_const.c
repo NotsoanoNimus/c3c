@@ -231,24 +231,24 @@ static bool sema_append_const_array_one(SemaContext *context, Expr *expr, Expr *
 	}
 	bool is_slice = list->const_expr.const_kind == CONST_SLICE;
 	ASSERT(!type_is_inferred(array_type));
-	bool is_vector = array_type->type_kind == TYPE_VECTOR;
+	bool is_vector = type_kind_is_real_vector(array_type->type_kind);
 	ConstInitializer *init = is_slice ? list->const_expr.slice_init : list->const_expr.initializer;
 	unsigned len = sema_len_from_const(list) + 1;
 	Type *indexed = type_get_indexed_type(init->type);
 	if (!cast_implicit(context, element, indexed, false)) return false;
-	Type *new_inner_type = is_vector ? type_get_vector(indexed, len) : type_get_array(indexed, len);
+	Type *new_inner_type = is_vector ? type_get_vector(indexed, array_type->type_kind, len) : type_get_array(indexed, len);
 	Type *new_outer_type = list->type;
 	if (!is_slice)
 	{
 		Type *outer_indexed = type_get_indexed_type(init->type);
-		new_outer_type = is_vector ? type_get_vector(outer_indexed, len) : type_get_array(outer_indexed, len);
+		new_outer_type = is_vector ? type_get_vector(outer_indexed,  array_type->type_kind, len) : type_get_array(outer_indexed, len);
 	}
 	switch (init->kind)
 	{
 		case CONST_INIT_ZERO:
 		{
 			init->kind = CONST_INIT_ARRAY;
-			init->type = new_inner_type;
+			const_init_set_type(init, new_inner_type);
 			ConstInitializer **inits = NULL;
 			vec_add(inits, const_init_new_array_value(element, len - 1));
 			init->init_array.elements = inits;
@@ -257,13 +257,13 @@ static bool sema_append_const_array_one(SemaContext *context, Expr *expr, Expr *
 			break;
 		}
 		case CONST_INIT_ARRAY:
-			init->type = new_inner_type;
+			const_init_set_type(init, new_inner_type);
 			vec_add(init->init_array.elements, const_init_new_array_value(element, len - 1));
 			expr_replace(expr, list);
 			expr->type = new_outer_type;
 			break;
 		case CONST_INIT_ARRAY_FULL:
-			init->type = new_inner_type;
+			const_init_set_type(init, new_inner_type);
 			vec_add(init->init_array_full, const_init_new_value(element));
 			expr_replace(expr, list);
 			expr->type = new_outer_type;
@@ -307,7 +307,7 @@ bool sema_expr_analyse_ct_concat(SemaContext *context, Expr *concat_expr, Expr *
 	ASSERT_SPAN(concat_expr, concat_expr->resolve_status == RESOLVE_RUNNING);
 	if (!sema_check_left_right_const(context, left, right)) return false;
 	ArraySize len = 0;
-	bool use_array = true;
+	TypeKind vec_type = TYPE_POISONED;
 	Type *indexed_type = NULL;
 	Type *element_type = left->type->canonical;
 	Type *right_type = right->type->canonical;
@@ -331,8 +331,11 @@ bool sema_expr_analyse_ct_concat(SemaContext *context, Expr *concat_expr, Expr *
 		case CONST_INITIALIZER:
 			switch (type_flatten(element_type)->type_kind)
 			{
+				case TYPE_SIMD_VECTOR:
+					vec_type = TYPE_SIMD_VECTOR;
+					break;
 				case TYPE_VECTOR:
-					use_array = false;
+					vec_type = TYPE_VECTOR;
 					break;
 				case TYPE_INFERRED_VECTOR:
 				case TYPE_INFERRED_ARRAY:
@@ -492,7 +495,7 @@ bool sema_expr_analyse_ct_concat(SemaContext *context, Expr *concat_expr, Expr *
 	{
 		expr_rewrite_to_const_zero(concat_expr, type_get_slice(indexed_type));
 	}
-	Type *type = use_array ? type_get_array(indexed_type, len) : type_get_vector(indexed_type, len);
+	Type *type = vec_type == TYPE_POISONED ? type_get_array(indexed_type, len) : type_get_vector(indexed_type, vec_type, len);
 	ConstInitializer *lhs_init = expr_const_initializer_from_expr(left);
 	ConstInitializer *rhs_init = expr_const_initializer_from_expr(right);
 	if (!rhs_init)
@@ -544,7 +547,7 @@ bool sema_expr_analyse_ct_concat(SemaContext *context, Expr *concat_expr, Expr *
 						ASSERT_SPAN(right, element->kind == CONST_INIT_ARRAY_VALUE);
 						element->init_array_value.index += (ArrayIndex)len_lhs;
 					}
-					rhs_init->type = type;
+					const_init_set_type(rhs_init, type);
 					expr_rewrite_const_initializer(concat_expr, type, rhs_init);
 					return true;
 				}
@@ -629,7 +632,7 @@ bool sema_expr_analyse_ct_concat(SemaContext *context, Expr *concat_expr, Expr *
 				case CONST_INIT_ZERO:
 				{
 					// { 1 => 3 } + { 0, 0, 0 }
-					lhs_init->type = type;
+					const_init_set_type(lhs_init, type);
 					expr_rewrite_const_initializer(concat_expr, type, lhs_init);
 					return true;
 				}

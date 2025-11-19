@@ -80,14 +80,14 @@ bool const_init_local_init_may_be_global_inner(ConstInitializer *init, bool top)
 void const_init_rewrite_to_zero(ConstInitializer *init, Type *type)
 {
 	init->kind = CONST_INIT_ZERO;
-	init->type = type_flatten(type);
+	const_init_set_type(init, type);
 }
 
 ConstInitializer *const_init_new_array(Type *type, ConstInitializer **elements)
 {
 	ConstInitializer *init = CALLOCS(ConstInitializer);
 	init->kind = CONST_INIT_ARRAY;
-	init->type = type_flatten(type);
+	const_init_set_type(init, type);
 	init->init_array.elements = elements;
 	return init;
 }
@@ -96,7 +96,7 @@ ConstInitializer *const_init_new_array_full(Type *type, ConstInitializer **eleme
 {
 	ConstInitializer *init = CALLOCS(ConstInitializer);
 	init->kind = CONST_INIT_ARRAY_FULL;
-	init->type = type_flatten(type);
+	const_init_set_type(init, type);
 	init->init_array_full = elements;
 	return init;
 }
@@ -105,7 +105,7 @@ ConstInitializer *const_init_new_struct(Type *type, Expr **elements)
 {
 	ConstInitializer *init = CALLOCS(ConstInitializer);
 	init->kind = CONST_INIT_STRUCT;
-	init->type = type_flatten(type);
+	const_init_set_type(init, type);
 	ConstInitializer **values = NULL;
 	FOREACH(Expr *, expr, elements)
 	{
@@ -123,7 +123,7 @@ ConstInitializer *const_init_new_struct(Type *type, Expr **elements)
 ConstInitializer *const_init_new_union(Type *type, ArrayIndex index, Expr *value)
 {
 	ConstInitializer *init = CALLOCS(ConstInitializer);
-	init->type = type_flatten(type);
+	const_init_set_type(init, type);
 	init->kind = CONST_INIT_UNION;
 	init->init_union.index = index;
 	if (expr_is_const_initializer(value))
@@ -140,7 +140,7 @@ ConstInitializer *const_init_new_union(Type *type, ArrayIndex index, Expr *value
 ConstInitializer *const_init_new_array_value(Expr *expr, ArrayIndex index)
 {
 	ConstInitializer *init = CALLOCS(ConstInitializer);
-	init->type = type_flatten(expr->type);
+	const_init_set_type(init, expr->type);
 	init->kind = CONST_INIT_ARRAY_VALUE;
 	init->init_array_value.index = index;
 	init->init_array_value.element = const_init_new_value(expr);
@@ -150,7 +150,7 @@ ConstInitializer *const_init_new_array_value(Expr *expr, ArrayIndex index)
 ConstInitializer *const_init_new_zero_array_value(Type *type, ArrayIndex index)
 {
 	ConstInitializer *init = CALLOCS(ConstInitializer);
-	init->type = type_flatten(type);
+	const_init_set_type(init, type);
 	init->kind = CONST_INIT_ARRAY_VALUE;
 	init->init_array_value.index = index;
 	init->init_array_value.element = const_init_new_zero(type);
@@ -160,7 +160,7 @@ ConstInitializer *const_init_new_zero(Type *type)
 {
 	ConstInitializer *init = CALLOCS(ConstInitializer);
 	init->kind = CONST_INIT_ZERO;
-	init->type = type_flatten(type);
+	const_init_set_type(init, type);
 	return init;
 }
 bool const_init_local_init_may_be_global(ConstInitializer *init)
@@ -367,7 +367,7 @@ static inline bool sema_expr_analyse_array_plain_initializer(SemaContext *contex
 			if (!sema_analyse_inferred_expr(context, inner_type, element, no_match_ref)) return false;
 			Type *element_type = element->type;
 			Type *element_flat = type_flatten(element_type);
-			if (element_flat->type_kind == TYPE_VECTOR
+			if (type_kind_is_real_vector(element_flat->type_kind)
 				&& type_flatten(type_get_indexed_type(element_type)) == type_flatten(inner_type))
 			{
 				unsigned len = element_flat->array.len;
@@ -463,7 +463,7 @@ static inline bool sema_expr_analyse_array_plain_initializer(SemaContext *contex
 			}
 			vec_add(inits, const_init_new_value(expr));
 		}
-		ConstInitializer *const_init = const_init_new_array_full(type_flatten(initializer->type), inits);
+		ConstInitializer *const_init = const_init_new_array_full(initializer->type, inits);
 		expr_rewrite_const_initializer(initializer, initializer->type, const_init);
 	}
 
@@ -666,10 +666,9 @@ static inline bool sema_expr_analyse_initializer(SemaContext *context, Type *ass
 	if (flattened->type_kind == TYPE_UNTYPED_LIST ||
 		flattened->type_kind == TYPE_ARRAY ||
 		flattened->type_kind == TYPE_INFERRED_ARRAY ||
-		flattened->type_kind == TYPE_INFERRED_VECTOR ||
 		flattened->type_kind == TYPE_FLEXIBLE_ARRAY ||
 		flattened->type_kind == TYPE_SLICE ||
-		flattened->type_kind == TYPE_VECTOR)
+		type_kind_is_any_vector(flattened->type_kind))
 	{
 		return sema_expr_analyse_array_plain_initializer(context, assigned_type, flattened, expr, no_match_ref);
 	}
@@ -871,12 +870,8 @@ bool sema_expr_analyse_initializer_list(SemaContext *context, Type *to, Expr *ex
 		case TYPE_UNTYPED_LIST:
 		case TYPE_STRUCT:
 		case TYPE_UNION:
-		case TYPE_ARRAY:
 		case TYPE_BITSTRUCT:
-		case TYPE_INFERRED_ARRAY:
-		case TYPE_INFERRED_VECTOR:
-		case TYPE_FLEXIBLE_ARRAY:
-		case TYPE_VECTOR:
+		case ALL_ARRAYLIKE:
 			return sema_expr_analyse_initializer(context, to, flattened, expr, no_match_ref);
 		case TYPE_SLICE:
 		{
@@ -960,7 +955,7 @@ void const_init_rewrite_to_value(ConstInitializer *const_init, Expr *value)
 		return;
 	}
 	const_init->init_value = value;
-	const_init->type = type_flatten(value->type);
+	const_init_set_type(const_init, value->type);
 	const_init->kind = CONST_INIT_VALUE;
 }
 
@@ -1106,7 +1101,7 @@ static inline void sema_update_const_initializer_with_designator_union(ConstInit
 	}
 
 	// Update of the sub element.
-	sub_element->type = type_flatten(const_init->type->decl->strukt.members[element->index]->type);
+	const_init_set_type(sub_element, const_init->type->decl->strukt.members[element->index]->type);
 	// And the index
 	const_init->init_union.index = element->index;
 
@@ -1257,7 +1252,7 @@ static inline void sema_update_const_initializer_with_designator(
 			sema_update_const_initializer_with_designator_union(const_init, curr, end, value);
 			return;
 		case TYPE_ARRAY:
-		case TYPE_VECTOR:
+		case VECTORS:
 			sema_update_const_initializer_with_designator_array(const_init, curr, end, value);
 			return;
 		default:
@@ -1309,7 +1304,7 @@ static Type *sema_find_type_of_element(SemaContext *context, Type *type, Designa
 				base = type_flattened->array.base;
 				break;
 			case TYPE_ARRAY:
-			case TYPE_VECTOR:
+			case VECTORS:
 				len = type_flattened->array.len;
 				base = type_flattened->array.base;
 				break;

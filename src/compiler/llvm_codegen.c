@@ -26,7 +26,7 @@ static void diagnostics_handler(LLVMDiagnosticInfoRef ref, void *context)
 	switch (severity)
 	{
 		case LLVMDSError:
-			error_exit("LLVM error generating code for %s: %s", ((GenContext *)context)->code_module->name, message);
+			error_exit("LLVM error generating code for %s: %s", ((GenContext *)context)->code_module->name->module, message);
 		case LLVMDSWarning:
 			severity_name = "warning";
 			break;
@@ -229,7 +229,7 @@ static LLVMValueRef llvm_emit_const_array_padding(LLVMTypeRef element_type, Inde
 	return llvm_get_zero_raw(LLVMArrayType(element_type, (unsigned)diff));
 }
 
-LLVMValueRef llvm_emit_const_initializer(GenContext *c, ConstInitializer *const_init)
+LLVMValueRef llvm_emit_const_initializer(GenContext *c, ConstInitializer *const_init, bool in_aggregate)
 {
 	ASSERT(const_init->type == type_flatten(const_init->type));
 	switch (const_init->kind)
@@ -246,17 +246,17 @@ LLVMValueRef llvm_emit_const_initializer(GenContext *c, ConstInitializer *const_
 			Type *element_type = array_type->array.base;
 			LLVMTypeRef element_type_llvm = llvm_get_type(c, element_type);
 			ConstInitializer **elements = const_init->init_array_full;
-			ASSERT(array_type->type_kind == TYPE_ARRAY || array_type->type_kind == TYPE_VECTOR);
+			ASSERT(type_is_arraylike(array_type));
 			ArraySize size = array_type->array.len;
 			ASSERT(size > 0);
 			LLVMValueRef *parts = VECNEW(LLVMValueRef, size);
 			for (ArrayIndex i = 0; i < (ArrayIndex)size; i++)
 			{
-				LLVMValueRef element = llvm_emit_const_initializer(c, elements[i]);
+				LLVMValueRef element = llvm_emit_const_initializer(c, elements[i], true);
 				if (element_type_llvm != LLVMTypeOf(element)) was_modified = true;
 				vec_add(parts, element);
 			}
-			if (array_type->type_kind == TYPE_VECTOR)
+			if ((!in_aggregate && array_type->type_kind == TYPE_VECTOR) || array_type->type_kind == TYPE_SIMD_VECTOR)
 			{
 				return LLVMConstVector(parts, vec_size(parts));
 			}
@@ -282,6 +282,7 @@ LLVMValueRef llvm_emit_const_initializer(GenContext *c, ConstInitializer *const_
 			unsigned alignment = 0;
 			LLVMValueRef *parts = NULL;
 			bool pack = false;
+			bool is_vec = array_type->type_kind == TYPE_SIMD_VECTOR || (!in_aggregate && array_type->type_kind == TYPE_VECTOR);
 			FOREACH(ConstInitializer *, element, elements)
 			{
 				ASSERT(element->kind == CONST_INIT_ARRAY_VALUE);
@@ -295,9 +296,19 @@ LLVMValueRef llvm_emit_const_initializer(GenContext *c, ConstInitializer *const_
 				// Add zeroes
 				if (diff > 0)
 				{
-					vec_add(parts, llvm_emit_const_array_padding(element_type_llvm, diff, &was_modified));
+					if (is_vec)
+					{
+						for (int i = 0; i < diff; i++)
+						{
+							vec_add(parts, llvm_get_zero_raw(element_type_llvm));
+						}
+					}
+					else
+					{
+						vec_add(parts, llvm_emit_const_array_padding(element_type_llvm, diff, &was_modified));
+					}
 				}
-				LLVMValueRef value = llvm_emit_const_initializer(c, element->init_array_value.element);
+				LLVMValueRef value = llvm_emit_const_initializer(c, element->init_array_value.element, true);
 				if (LLVMTypeOf(value) != element_type_llvm) was_modified = true;
 				vec_add(parts, value);
 				current_index = element_index + 1;
@@ -323,7 +334,7 @@ LLVMValueRef llvm_emit_const_initializer(GenContext *c, ConstInitializer *const_
 			Decl *decl = const_init->type->decl;
 
 			// Emit our value.
-			LLVMValueRef result = llvm_emit_const_initializer(c, const_init->init_union.element);
+			LLVMValueRef result = llvm_emit_const_initializer(c, const_init->init_union.element, true);
 			LLVMTypeRef result_type = LLVMTypeOf(result);
 
 			// Get the union value
@@ -377,7 +388,7 @@ LLVMValueRef llvm_emit_const_initializer(GenContext *c, ConstInitializer *const_
 				{
 					vec_add(entries, llvm_emit_const_padding(c, member->padding));
 				}
-				LLVMValueRef element = llvm_emit_const_initializer(c, const_init->init_struct[i]);
+				LLVMValueRef element = llvm_emit_const_initializer(c, const_init->init_struct[i], true);
 				LLVMTypeRef element_type = LLVMTypeOf(element);
 				//ASSERT(LLVMIsConstant(element));
 				if (llvm_get_type(c, member->type) != element_type)
@@ -433,7 +444,7 @@ void llvm_emit_ptr_from_array(GenContext *c, BEValue *value)
 			value->kind = BE_ADDRESS;
 			return;
 		case TYPE_ARRAY:
-		case TYPE_VECTOR:
+		case VECTORS:
 		case TYPE_FLEXIBLE_ARRAY:
 			return;
 		case TYPE_SLICE:
@@ -541,7 +552,7 @@ void llvm_emit_global_variable_init(GenContext *c, Decl *decl)
 	// Skip real constants.
 	if (!decl->type) return;
 
-	decl_append_links_to_global(decl);
+	decl_append_links_to_global_during_codegen(decl);
 
 	LLVMValueRef init_value;
 
@@ -562,7 +573,7 @@ void llvm_emit_global_variable_init(GenContext *c, Decl *decl)
 		{
 			ASSERT(type_flatten(init_expr->type)->type_kind != TYPE_SLICE);
 			ConstInitializer *list = init_expr->const_expr.initializer;
-			init_value = llvm_emit_const_initializer(c, list);
+			init_value = llvm_emit_const_initializer(c, list, false);
 		}
 		else
 		{
@@ -725,8 +736,7 @@ void gencontext_print_llvm_ir(GenContext *context)
 	}
 }
 
-
-LLVMValueRef llvm_emit_alloca(GenContext *c, LLVMTypeRef type, unsigned alignment, const char *name)
+INLINE LLVMValueRef llvm_emit_alloca_internal(GenContext *c, LLVMTypeRef type, unsigned alignment, const char *name)
 {
 	ASSERT(LLVMGetTypeKind(type) != LLVMVoidTypeKind);
 	ASSERT(!llvm_is_global_eval(c));
@@ -740,9 +750,31 @@ LLVMValueRef llvm_emit_alloca(GenContext *c, LLVMTypeRef type, unsigned alignmen
 	return alloca;
 }
 
-LLVMValueRef llvm_emit_alloca_aligned(GenContext *c, Type *type, const char *name)
+BEValue llvm_emit_alloca_b(GenContext *c, Type *type, const char *name)
 {
-	return llvm_emit_alloca(c, llvm_get_type(c, type), type_alloca_alignment(type), name);
+	type = type_lowering(type);
+	if (type->type_kind == TYPE_VECTOR)
+	{
+		type = type_get_vector(type->array.base, TYPE_SIMD_VECTOR, type->array.len);
+	}
+	LLVMTypeRef llvm_type = llvm_get_type(c, type);
+	AlignSize alignment = type_alloca_alignment(type);
+	LLVMValueRef alloca = llvm_emit_alloca_internal(c, llvm_type, alignment, name);
+	return (BEValue){.value = alloca, .alignment = alignment, .kind = BE_ADDRESS, .type = type};
+}
+
+BEValue llvm_emit_alloca_b_realign(GenContext *c, Type *type, AlignSize alignment, const char *name)
+{
+	ASSERT(alignment != 0);
+	type = type_lowering(type);
+	LLVMTypeRef llvm_type = llvm_get_type(c, type);
+	LLVMValueRef alloca = llvm_emit_alloca_internal(c, llvm_type, alignment, name);
+	return (BEValue){.value = alloca, .alignment = alignment, .kind = BE_ADDRESS, .type = type};
+}
+
+LLVMValueRef llvm_emit_alloca(GenContext *c, LLVMTypeRef type, unsigned alignment, const char *name)
+{
+	return llvm_emit_alloca_internal(c, type, alignment, name);
 }
 
 void llvm_emit_and_set_decl_alloca(GenContext *c, Decl *decl)
@@ -750,7 +782,7 @@ void llvm_emit_and_set_decl_alloca(GenContext *c, Decl *decl)
 	Type *type = type_lowering(decl->type);
 	if (type == type_void) return;
 	ASSERT(!decl->backend_ref && !decl->is_value);
-	decl->backend_ref = llvm_emit_alloca(c, llvm_get_type(c, type), decl->alignment, decl->name ? decl->name : ".anon");
+	decl->backend_ref = llvm_emit_alloca_internal(c, llvm_get_type(c, type), decl->alignment, decl->name ? decl->name : ".anon");
 }
 
 void llvm_emit_local_var_alloca(GenContext *c, Decl *decl)
@@ -1205,7 +1237,6 @@ void llvm_append_function_attributes(GenContext *c, Decl *decl)
 	LLVMValueRef function = decl->backend_ref;
 	ABIArgInfo *ret_abi_info = prototype->ret_abi_info;
 	llvm_emit_param_attributes(c, function, ret_abi_info, true, 0, 0, NULL);
-	unsigned params = vec_size(prototype->param_types);
 	if (c->debug.enable_stacktrace)
 	{
 		llvm_attribute_add_string(c, function, "frame-pointer", "all", -1);
@@ -1213,17 +1244,14 @@ void llvm_append_function_attributes(GenContext *c, Decl *decl)
 	}
 	llvm_attribute_add_string(c, function, "stack-protector-buffer-size", "8", -1);
 	llvm_attribute_add_string(c, function, "no-trapping-math", "true", -1);
+	int offset = prototype->ret_rewrite == RET_OPTIONAL_VALUE ? 1 : 0;
 
-	if (prototype->ret_by_ref)
-	{
-		ABIArgInfo *info = prototype->ret_by_ref_abi_info;
-		llvm_emit_param_attributes(c, function, prototype->ret_by_ref_abi_info, false, info->param_index_start + 1,
-		                           info->param_index_end, NULL);
-	}
-	for (unsigned i = 0; i < params; i++)
+	Signature *sig = prototype->raw_type->function.signature;
+	for (unsigned i = offset; i < prototype->param_count; i++)
 	{
 		ABIArgInfo *info = prototype->abi_args[i];
-		llvm_emit_param_attributes(c, function, info, false, info->param_index_start + 1, info->param_index_end, decl->func_decl.signature.params[i]);
+		Decl *param_decl = sig->params[i - offset];
+		llvm_emit_param_attributes(c, function, info, false, info->param_index_start + 1, info->param_index_end, param_decl);
 	}
 	// We ignore decl->func_decl.attr_inline and place it in every call instead.
 	if (decl->func_decl.attr_noinline)

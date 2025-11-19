@@ -31,7 +31,7 @@ static inline bool sema_analyse_struct_member(SemaContext *context, Decl *parent
 static inline bool sema_check_struct_holes(SemaContext *context, Decl *decl, Decl *member);
 static inline bool sema_analyse_bitstruct_member(SemaContext *context, Decl *parent, Decl *member, unsigned index, bool allow_overlap, bool *erase_decl);
 
-static inline bool sema_analyse_doc_header(SemaContext *context, AstId doc, Decl **params, Decl **extra_params, bool *pure_ref);
+static inline bool sema_analyse_doc_header(SemaContext *context, AstId doc, Decl **params, Decl **extra_params, bool *pure_ref, bool is_raw_vaarg);
 
 static const char *attribute_domain_to_string(AttributeDomain domain);
 static bool sema_analyse_attribute(SemaContext *context, ResolvedAttrData *attr_data, Decl *decl, Attr *attr, AttributeDomain domain, bool *erase_decl);
@@ -48,6 +48,29 @@ static inline bool sema_analyse_typedef(SemaContext *context, Decl *decl, bool *
 
 static CompilationUnit *unit_copy(Module *module, CompilationUnit *unit);
 
+static inline bool sema_resolve_align_expr(SemaContext *context, Expr *expr, AlignSize *result)
+{
+	if (!sema_analyse_expr_rvalue(context, expr)) return false;
+	if (!expr_is_const_int(expr))
+	{
+		RETURN_SEMA_ERROR(expr, "Expected a constant integer value as argument.");
+	}
+	if (int_ucomp(expr->const_expr.ixx, MAX_ALIGNMENT, BINARYOP_GT))
+	{
+		RETURN_SEMA_ERROR(expr, "Alignment must be less or equal to %ull.", MAX_ALIGNMENT);
+	}
+	if (int_ucomp(expr->const_expr.ixx, 0, BINARYOP_LE))
+	{
+		RETURN_SEMA_ERROR(expr, "Alignment must be greater than zero.");
+	}
+	uint64_t align = int_to_u64(expr->const_expr.ixx);
+	if (!is_power_of_two(align))
+	{
+		RETURN_SEMA_ERROR(expr, "Alignment must be a power of two.");
+	}
+	*result = (AlignSize)align;
+	return true;
+}
 static Module *module_instantiate_generic(SemaContext *context, Module *module, Path *path, Expr **params, SourceSpan from_span);
 
 static inline bool sema_analyse_enum_param(SemaContext *context, Decl *param);
@@ -259,7 +282,8 @@ static inline bool sema_analyse_struct_member(SemaContext *context, Decl *parent
 			// Set the nested type as export if this one is exported.
 			decl->is_export = is_export;
 			// Perform the analysis
-			return sema_analyse_decl(context, decl);
+			if (!sema_analyse_decl(context, decl)) return false;
+			return true;
 		default:
 			UNREACHABLE
 	}
@@ -289,6 +313,7 @@ static inline bool sema_check_struct_holes(SemaContext *context, Decl *decl, Dec
 	}
 	return true;
 }
+
 
 /**
  * Analyse union members, calculating alignment.
@@ -335,7 +360,7 @@ static bool sema_analyse_union_members(SemaContext *context, Decl *decl)
 			RETURN_SEMA_ERROR(member, "Flexible array members not allowed in unions.");
 		}
 		AlignSize member_alignment;
-		if (!sema_set_abi_alignment(context, member->type, &member_alignment)) return false;
+		if (!sema_set_alignment(context, member->type, &member_alignment, false)) return false;
 		if (!sema_check_struct_holes(context, decl, member)) return false;
 
 		ByteSize member_size = type_size(member->type);
@@ -405,14 +430,19 @@ static bool sema_analyse_union_members(SemaContext *context, Decl *decl)
 AlignSize sema_get_max_natural_alignment(Type *type)
 {
 RETRY:;
-	type = type_flatten(type);
 	switch (type->type_kind)
 	{
-		case TYPE_TYPEDEF:
-		case TYPE_POISONED:
-		case TYPE_ALIAS:
-		case TYPE_UNTYPED_LIST:
 		case TYPE_OPTIONAL:
+			type = type->optional;
+			goto RETRY;
+		case TYPE_TYPEDEF:
+			type = type->decl->distinct->type;
+			goto RETRY;
+		case TYPE_ALIAS:
+			type = type->canonical;
+			goto RETRY;
+		case TYPE_POISONED:
+		case TYPE_UNTYPED_LIST:
 		case TYPE_WILDCARD:
 		case TYPE_TYPEINFO:
 		case TYPE_MEMBER:
@@ -451,14 +481,15 @@ RETRY:;
 		case TYPE_BITSTRUCT:
 			type = type->decl->strukt.container_type->type;
 			goto RETRY;
+		case TYPE_SIMD_VECTOR:
+			return type_abi_alignment(type);
 		case TYPE_ARRAY:
 		case TYPE_FLEXIBLE_ARRAY:
 		case TYPE_INFERRED_ARRAY:
-			type = type->array.base;
-			goto RETRY;
 		case TYPE_VECTOR:
 		case TYPE_INFERRED_VECTOR:
-			return type_abi_alignment(type);
+			type = type->array.base;
+			goto RETRY;
 	}
 	UNREACHABLE
 }
@@ -544,7 +575,7 @@ static bool sema_analyse_struct_members(SemaContext *context, Decl *decl)
 			SEMA_ERROR(member, "Recursive definition of %s.", type_quoted_error_string(member_type));
 			return decl_poison(decl);
 		}
-		if (!sema_set_abi_alignment(context, member->type, &member_type_alignment)) return decl_poison(decl);
+		if (!sema_set_alignment(context, member->type, &member_type_alignment, false)) return decl_poison(decl);
 		// And get the natural alignment
 		AlignSize member_natural_alignment = sema_get_max_natural_alignment(member->type);
 
@@ -962,7 +993,7 @@ static bool sema_analyse_interface(SemaContext *context, Decl *decl, bool *erase
 		first->var.kind = VARDECL_PARAM;
 		first->unit = context->unit;
 		first->resolve_status = RESOLVE_DONE;
-		first->alignment = type_abi_alignment(type_voidptr);
+		first->alignment = type_alloca_alignment(type_voidptr);
 		vec_insert_first(method->func_decl.signature.params, first);
 		method->unit = context->unit;
 		method->func_decl.signature.vararg_index += 1;
@@ -1013,6 +1044,7 @@ RETRY:
 		case TYPE_BOOL:
 		case ALL_INTS:
 		case ALL_FLOATS:
+		case ALL_VECTORS:
 		case TYPE_ANY:
 		case TYPE_INTERFACE:
 		case TYPE_ANYFAULT:
@@ -1023,8 +1055,6 @@ RETRY:
 		case TYPE_UNION:
 		case TYPE_BITSTRUCT:
 		case TYPE_TYPEDEF:
-		case TYPE_VECTOR:
-		case TYPE_INFERRED_VECTOR:
 		case TYPE_UNTYPED_LIST:
 		case TYPE_WILDCARD:
 		case TYPE_TYPEINFO:
@@ -1102,6 +1132,7 @@ static inline bool sema_analyse_signature(SemaContext *context, Signature *sig, 
 {
 	Variadic variadic_type = sig->variadic;
 	Decl **params = sig->params;
+
 	unsigned param_count = vec_size(params);
 	unsigned vararg_index = sig->vararg_index;
 	bool is_macro = sig->is_macro;
@@ -1406,7 +1437,7 @@ static inline bool sema_analyse_signature(SemaContext *context, Signature *sig, 
 		{
 			if (!sema_deep_resolve_function_ptr(context, type_info)) return false;
 			param->type = type_info->type;
-			if (!sema_set_abi_alignment(context, param->type, &param->alignment)) return false;
+			if (!sema_set_alignment(context, param->type, &param->alignment, true)) return false;
 		}
 
 		if (param->var.init_expr)
@@ -1461,8 +1492,12 @@ static inline bool sema_analyse_fntype(SemaContext *context, Decl *decl, bool *e
 {
 	if (!sema_analyse_attributes(context, decl, decl->attributes, ATTR_FNTYPE, erase_decl)) return decl_poison(decl);
 	if (*erase_decl) return true;
-	Signature *sig = &decl->fntype_decl;
-	return sema_analyse_function_signature(context, decl, NULL, sig->abi, sig);
+	Signature *sig = &decl->fntype_decl.signature;
+	if (!sema_analyse_function_signature(context, decl, NULL, sig->abi, sig)) return false;
+	bool pure = false;
+	if (!sema_analyse_doc_header(context, decl->fntype_decl.docs, sig->params, NULL, &pure, sig->variadic == VARIADIC_RAW)) return false;
+	sig->attrs.is_pure = pure;
+	return true;
 }
 
 static inline bool sema_analyse_type_alias(SemaContext *context, Decl *decl, bool *erase_decl)
@@ -1476,7 +1511,7 @@ static inline bool sema_analyse_type_alias(SemaContext *context, Decl *decl, boo
 		Decl *fn_decl = decl->type_alias_decl.decl;
 		fn_decl->is_export = is_export;
 		fn_decl->unit = decl->unit;
-		fn_decl->type = type_new_func(fn_decl, &fn_decl->fntype_decl);
+		fn_decl->type = type_new_func(fn_decl, &fn_decl->fntype_decl.signature);
 		decl->type->canonical = type_get_func_ptr(fn_decl->type);
 		return true;
 	}
@@ -1524,10 +1559,11 @@ static inline bool sema_analyse_typedef(SemaContext *context, Decl *decl, bool *
 	TypeInfo *info = decl->distinct;
 	info->in_def = true;
 	if (!sema_resolve_type_info(context, info, RESOLVE_TYPE_DEFAULT)) return false;
-
+	if (!sema_resolve_type_decl(context, info->type)) return false;
+	Type *inner_type = info->type;
 	// Optional isn't allowed of course.
-	if (type_is_optional(info->type)) RETURN_SEMA_ERROR(decl, "You cannot create a distinct type from an optional.");
-	switch (sema_resolve_storage_type(context, info->type))
+	if (type_is_optional(inner_type)) RETURN_SEMA_ERROR(decl, "You cannot create a distinct type from an optional.");
+	switch (sema_resolve_storage_type(context, inner_type))
 	{
 		case STORAGE_ERROR:
 			return false;
@@ -1539,9 +1575,20 @@ static inline bool sema_analyse_typedef(SemaContext *context, Decl *decl, bool *
 			RETURN_SEMA_ERROR(info, "You cannot create a distinct type from the wildcard type.");
 		case STORAGE_COMPILE_TIME:
 			RETURN_SEMA_ERROR(info, "You cannot create a distinct type for %s as it is a compile time type.",
-							  type_invalid_storage_type_name(info->type));
+							  type_invalid_storage_type_name(inner_type));
 	}
 
+	if (decl->distinct_align)
+	{
+		if (!sema_resolve_align_expr(context, decl->distinct_align, &decl->alignment)) return false;
+		AlignSize default_size = type_abi_alignment(inner_type);
+		// Remove "alignment"
+		if (default_size == decl->alignment) decl->distinct_align = NULL;
+	}
+	if (!decl->alignment)
+	{
+		decl->alignment = type_abi_alignment(inner_type);
+	}
 	// Distinct types drop the canonical part.
 	info->type = info->type->canonical;
 	return true;
@@ -1686,7 +1733,7 @@ static inline bool sema_analyse_enum(SemaContext *context, Decl *decl, bool *era
 	for (unsigned i = 0; i < associated_value_count; i++)
 	{
 		Decl *param = associated_values[i];
-		if (!sema_set_abi_alignment(context, param->type, &param->alignment)) return false;
+		if (!sema_set_alignment(context, param->type, &param->alignment, true)) return false;
 		param->resolve_status = RESOLVE_DONE;
 	}
 	for (unsigned i = 0; i < enums; i++)
@@ -2835,8 +2882,7 @@ static inline bool sema_analyse_method(SemaContext *context, Decl *decl)
 				goto NOT_VALID_NAME;
 			}
 			break;
-		case TYPE_VECTOR:
-		case TYPE_INFERRED_VECTOR:
+		case ALL_VECTORS:
 		{
 			unsigned len = strlen(decl->name);
 			if (len <= 4)
@@ -2983,7 +3029,7 @@ INLINE bool update_abi(Decl *decl, CallABI abi)
 {
 	if (decl->decl_kind == DECL_FNTYPE)
 	{
-		decl->fntype_decl.abi = abi;
+		decl->fntype_decl.signature.abi = abi;
 		return true;
 	}
 	decl->func_decl.signature.abi = abi;
@@ -3054,6 +3100,7 @@ static bool sema_analyse_attribute(SemaContext *context, ResolvedAttrData *attr_
 			[ATTRIBUTE_BIGENDIAN] = ATTR_BITSTRUCT,
 			[ATTRIBUTE_BUILTIN] = ATTR_MACRO | ATTR_FUNC | ATTR_GLOBAL | ATTR_CONST,
 			[ATTRIBUTE_CALLCONV] = ATTR_FUNC | ATTR_INTERFACE_METHOD | ATTR_FNTYPE,
+			[ATTRIBUTE_CNAME] = ATTR_FUNC | ATTR_GLOBAL | ATTR_CONST | USER_DEFINED_TYPES,
 			[ATTRIBUTE_COMPACT] = ATTR_STRUCT | ATTR_UNION,
 			[ATTRIBUTE_CONST] = ATTR_MACRO,
 			[ATTRIBUTE_DEPRECATED] = USER_DEFINED_TYPES | CALLABLE_TYPE | ATTR_CONST | ATTR_GLOBAL | ATTR_MEMBER | ATTR_BITSTRUCT_MEMBER | ATTR_INTERFACE | ATTR_ALIAS,
@@ -3093,6 +3140,7 @@ static bool sema_analyse_attribute(SemaContext *context, ResolvedAttrData *attr_
 			[ATTRIBUTE_SAFEMACRO] = ATTR_MACRO,
 			[ATTRIBUTE_SAFEINFER] = ATTR_GLOBAL | ATTR_LOCAL,
 			[ATTRIBUTE_SECTION] = ATTR_FUNC | ATTR_CONST | ATTR_GLOBAL,
+			[ATTRIBUTE_SIMD] = 0,
 			[ATTRIBUTE_STRUCTLIKE] = ATTR_TYPEDEF,
 			[ATTRIBUTE_TAG] = ATTR_BITSTRUCT_MEMBER | ATTR_MEMBER | USER_DEFINED_TYPES | CALLABLE_TYPE,
 			[ATTRIBUTE_TEST] = ATTR_FUNC,
@@ -3251,28 +3299,7 @@ static bool sema_analyse_attribute(SemaContext *context, ResolvedAttrData *attr_
 			{
 				RETURN_SEMA_ERROR(attr, "'align' requires an power-of-2 argument, e.g. align(8).");
 			}
-			if (!sema_analyse_expr_rvalue(context, expr)) return false;
-			if (!expr_is_const_int(expr))
-			{
-				RETURN_SEMA_ERROR(expr, "Expected a constant integer value as argument.");
-			}
-			{
-				if (int_ucomp(expr->const_expr.ixx, MAX_ALIGNMENT, BINARYOP_GT))
-				{
-					RETURN_SEMA_ERROR(expr, "Alignment must be less or equal to %ull.", MAX_ALIGNMENT);
-				}
-				if (int_ucomp(expr->const_expr.ixx, 0, BINARYOP_LE))
-				{
-					RETURN_SEMA_ERROR(expr, "Alignment must be greater than zero.");
-				}
-				uint64_t align = int_to_u64(expr->const_expr.ixx);
-				if (!is_power_of_two(align))
-				{
-					RETURN_SEMA_ERROR(expr, "Alignment must be a power of two.");
-				}
-				decl->alignment = (AlignSize)align;
-				return true;
-			}
+			return sema_resolve_align_expr(context, expr, &decl->alignment);
 		case ATTRIBUTE_WASM:
 			if (args > 2) RETURN_SEMA_ERROR(attr->exprs[2], "Too many arguments to '@wasm', expected 0, 1 or 2 arguments");
 			decl->is_export = true;
@@ -3299,14 +3326,15 @@ static bool sema_analyse_attribute(SemaContext *context, ResolvedAttrData *attr_
 					RETURN_SEMA_ERROR(module, "Expected a constant string value as argument.");
 				}
 				attr_data->wasm_module = module->const_expr.bytes.ptr;
-				if (!sema_analyse_expr_rvalue(context, expr)) return false;
-				if (!expr_is_const_string(expr))
-				{
-					RETURN_SEMA_ERROR(expr, "Expected a constant string value as argument.");
-				}
-				decl->extname = expr->const_expr.bytes.ptr;
-				decl->has_extname = true;
 			}
+
+			if (!sema_analyse_expr_rvalue(context, expr)) return false;
+			if (!expr_is_const_string(expr))
+			{
+				RETURN_SEMA_ERROR(expr, "Expected a constant string value as argument.");
+			}
+			decl->extname = expr->const_expr.bytes.ptr;
+			decl->has_extname = true;
 			return true;
 		case ATTRIBUTE_EXPORT:
 			if (context->unit->module->is_generic)
@@ -3322,7 +3350,7 @@ static bool sema_analyse_attribute(SemaContext *context, ResolvedAttrData *attr_
 				}
 				if (decl->has_extname)
 				{
-					RETURN_SEMA_ERROR(expr, "An external name is already defined, please use '@extern` without an argument.");
+					RETURN_SEMA_ERROR(expr, "An external name is already defined, please use '@export` without an argument.");
 				}
 				decl->has_extname = true;
 				decl->extname = expr->const_expr.bytes.ptr;
@@ -3370,8 +3398,8 @@ static bool sema_analyse_attribute(SemaContext *context, ResolvedAttrData *attr_
 						decl->func_decl.signature.attrs.format = val + 1;
 						return true;
 					case DECL_FNTYPE:
-						if (decl->fntype_decl.attrs.format) break;
-						decl->fntype_decl.attrs.format = val + 1;
+						if (decl->fntype_decl.signature.attrs.format) break;
+						decl->fntype_decl.signature.attrs.format = val + 1;
 						return true;
 					default:
 						UNREACHABLE
@@ -3418,7 +3446,10 @@ static bool sema_analyse_attribute(SemaContext *context, ResolvedAttrData *attr_
 		case ATTRIBUTE_STRUCTLIKE:
 			decl->attr_structlike = true;
 			return true;
+		case ATTRIBUTE_SIMD:
+			RETURN_SEMA_ERROR(attr, "'@simd' is only allowed on typedef types.");
 		case ATTRIBUTE_SECTION:
+		case ATTRIBUTE_CNAME:
 		case ATTRIBUTE_EXTERN:
 			if (context->unit->module->is_generic)
 			{
@@ -3439,6 +3470,7 @@ static bool sema_analyse_attribute(SemaContext *context, ResolvedAttrData *attr_
 					if (!sema_check_section(context, attr)) return false;
 					attr_data->section = expr->const_expr.bytes.ptr;
 					break;
+				case ATTRIBUTE_CNAME:
 				case ATTRIBUTE_EXTERN:
 					decl->has_extname = true;
 					decl->extname = expr->const_expr.bytes.ptr;
@@ -3727,9 +3759,74 @@ bool sema_analyse_attributes(SemaContext *context, Decl *decl, Attr **attrs, Att
 	return true;
 }
 
-static inline bool sema_analyse_doc_header(SemaContext *context, AstId doc,
-										   Decl **params, Decl **extra_params, bool *pure_ref)
+static bool sema_analyse_optional_returns(SemaContext *context, Ast *directive)
 {
+	FOREACH(Ast *, ret, directive->contract_stmt.faults)
+	{
+		if (ret->contract_fault.expanding) continue;
+		if (ret->contract_fault.resolved)
+		{
+			continue;
+		}
+		Expr *expr = ret->contract_fault.expr;
+		if (expr->expr_kind == EXPR_RETHROW)
+		{
+			Expr *inner = expr->rethrow_expr.inner;
+			if (!sema_analyse_expr(context, inner)) return false;
+			Decl *decl;
+			switch (inner->expr_kind)
+			{
+				case EXPR_IDENTIFIER:
+					decl = inner->ident_expr;
+					break;
+				case EXPR_TYPEINFO:
+				{
+					Type *type = inner->type_expr->type;
+					if (type->type_kind != TYPE_ALIAS) goto IS_FAULT;
+					decl = type->decl;
+					ASSERT(decl->decl_kind == DECL_TYPE_ALIAS);
+					if (!decl->type_alias_decl.is_func) goto IS_FAULT;
+					decl = decl->type_alias_decl.decl;
+					break;
+				}
+				default:
+					goto IS_FAULT;;
+			}
+			decl = decl_flatten(decl);
+			if (decl->decl_kind != DECL_FNTYPE && decl->decl_kind != DECL_FUNC) goto IS_FAULT;
+			if (!sema_analyse_decl(context, decl)) return false;
+			AstId docs = decl->decl_kind == DECL_FNTYPE ? decl->fntype_decl.docs : decl->func_decl.docs;
+			while (docs)
+			{
+				Ast *doc = astptr(docs);
+				docs = doc->next;
+				if (doc->contract_stmt.kind != CONTRACT_OPTIONALS) continue;
+				ret->contract_fault.expanding = true;
+				bool success = sema_analyse_optional_returns(context, doc);
+				ret->contract_fault.expanding = false;
+				if (!success) false;
+			}
+			continue;
+		}
+IS_FAULT:;
+		if (!sema_analyse_expr_rvalue(context, expr)) return false;
+		if (expr->type->canonical != type_fault)
+		{
+			RETURN_SEMA_ERROR(expr, "Expected a fault here.");
+		}
+		if (!expr_is_const_fault(expr)) RETURN_SEMA_ERROR(expr, "A constant fault is required.");
+		Decl *decl = expr->const_expr.fault;
+		if (!decl) RETURN_SEMA_ERROR(expr, "A non-null fault is required.");
+		ret->contract_fault.decl = decl;
+		ret->contract_fault.resolved = true;
+	}
+	return true;
+}
+
+static inline bool sema_analyse_doc_header(SemaContext *context, AstId doc,
+                                           Decl **params, Decl **extra_params, bool *pure_ref, bool is_raw_vaarg)
+{
+	bool va_param_found = false;
 	while (doc)
 	{
 		Ast *directive = astptr(doc);
@@ -3745,8 +3842,29 @@ static inline bool sema_analyse_doc_header(SemaContext *context, AstId doc,
 			*pure_ref = true;
 			continue;
 		}
+		if (directive_kind == CONTRACT_OPTIONALS)
+		{
+			if (!sema_analyse_optional_returns(context, directive)) return false;
+		}
 		if (directive_kind != CONTRACT_PARAM) continue;
 		const char *param_name = directive->contract_stmt.param.name;
+		if (!param_name)
+		{
+			if (va_param_found)
+			{
+				RETURN_SEMA_ERROR_AT(directive->contract_stmt.param.span, "The '...' @param may not be repeated.");
+			}
+			if (directive->contract_stmt.param.modifier != INOUT_ANY)
+			{
+				RETURN_SEMA_ERROR_AT(directive->contract_stmt.param.span, "'...' @params may not have any in-out modifiers.");
+			}
+			if (!is_raw_vaarg)
+			{
+				RETURN_SEMA_ERROR_AT(directive->contract_stmt.param.span, "'...' @params are only allowed macros and functions with a '...' parameter.");
+			}
+			va_param_found = true;
+			continue;
+		}
 		Decl *param = NULL;
 		FOREACH(Decl *, other_param, params)
 		{
@@ -4221,8 +4339,9 @@ CHECK_DONE:
 								"'extern' or place it in an .c3i file.");
 	}
 	bool pure = false;
+
 	if (!sema_analyse_doc_header(context, decl->func_decl.docs, decl->func_decl.signature.params, NULL,
-	                             &pure)) return false;
+	                             &pure, sig->variadic == VARIADIC_RAW)) return false;
 	decl->func_decl.signature.attrs.is_pure = pure;
 	if (!sema_set_alloca_alignment(context, decl->type, &decl->alignment)) return false;
 	DEBUG_LOG("<<< Function analysis of [%s] successful.", decl_safe_name(decl));
@@ -4418,27 +4537,28 @@ static inline bool sema_analyse_macro(SemaContext *context, Decl *decl, bool *er
 	if (!sema_analyse_func_macro(context, decl, ATTR_MACRO, erase_decl)) return false;
 	if (*erase_decl) return true;
 
-	if (!sema_analyse_signature(context, &decl->func_decl.signature, type_infoptrzero(decl->func_decl.type_parent), decl)) return false;
+	Signature *sig = &decl->func_decl.signature;
+	if (!sema_analyse_signature(context, sig, type_infoptrzero(decl->func_decl.type_parent), decl)) return false;
 
 	DeclId body_param = decl->func_decl.body_param;
-	if (!decl->func_decl.signature.is_at_macro && body_param && !decl->func_decl.signature.is_safemacro)
+	if (!decl->func_decl.signature.is_at_macro && body_param && !sig->is_safemacro)
 	{
 		RETURN_SEMA_ERROR(decl, "Names of macros with a trailing body must start with '@'.");
 	}
 	Decl **body_parameters = body_param ? declptr(body_param)->body_params : NULL;
 	if (!sema_analyse_macro_body(context, body_parameters)) return false;
 	bool pure = false;
-	if (!sema_analyse_doc_header(context, decl->func_decl.docs, decl->func_decl.signature.params, body_parameters,
-	                             &pure)) return false;
+	if (!sema_analyse_doc_header(context, decl->func_decl.docs, sig->params, body_parameters,
+	                             &pure, sig->variadic == VARIADIC_RAW)) return false;
 	if (decl->func_decl.type_parent)
 	{
 		if (!sema_analyse_macro_method(context, decl)) return false;
 	}
-	bool always_const = decl->func_decl.signature.attrs.always_const;
+	bool always_const = sig->attrs.always_const;
 	// Sanity check "always const"
 	if (always_const)
 	{
-		if (typeget(decl->func_decl.signature.rtype) == type_void) RETURN_SEMA_ERROR(decl, "'@const' macros may not return 'void', they should always return a constant value.");
+		if (typeget(sig->rtype) == type_void) RETURN_SEMA_ERROR(decl, "'@const' macros may not return 'void', they should always return a constant value.");
 		if (body_parameters) RETURN_SEMA_ERROR(decl, "'@const' macros cannot have body parameters.");
 		Ast *body = astptr(decl->func_decl.body);
 		ASSERT(body->ast_kind == AST_COMPOUND_STMT);
@@ -4714,7 +4834,7 @@ bool sema_analyse_var_decl(SemaContext *context, Decl *decl, bool local, bool *c
 			return decl_poison(decl);
 		}
 		if (!sema_analyse_expr_rvalue(context, init_expr)) return decl_poison(decl);
-		if (check_defined || global_level_var || !type_is_abi_aggregate(init_expr->type)) sema_cast_const(init_expr);
+		if (check_defined || global_level_var || !type_is_aggregate(init_expr->type)) sema_cast_const(init_expr);
 		if (global_level_var && !expr_is_runtime_const(init_expr))
 		{
 			if (check_defined) return *check_defined = true, false;
@@ -4843,7 +4963,7 @@ bool sema_analyse_var_decl(SemaContext *context, Decl *decl, bool local, bool *c
 			}
 		}
 		if (!success) goto EXIT_OK;
-		if (global_level_var || !type_is_abi_aggregate(init->type)) sema_cast_const(init);
+		if (global_level_var || !type_is_aggregate(init->type)) sema_cast_const(init);
 		if (expr_is_const(init))
 		{
 			init->const_expr.is_hex = false;
@@ -5162,13 +5282,22 @@ Decl *sema_analyse_parameterized_identifier(SemaContext *c, Path *decl_path, con
 
 	unsigned parameter_count = vec_size(module->parameters);
 	ASSERT(parameter_count > 0);
-	if (parameter_count != vec_size(params))
+	unsigned count = vec_size(params);
+	if (parameter_count != count)
 	{
-		ASSERT_AT(span, vec_size(params));
-		sema_error_at(c, extend_span_with_token(params[0]->span, vectail(params)->span),
-					  "The generic module expected %d arguments, but you supplied %d, did you make a mistake?",
-					  parameter_count,
-					  vec_size(params));
+		if (!count)
+		{
+			sema_error_at(c, invocation_span,
+						  "'%s' must be instantiatied with generic module arguments inside the '{}', did you forget them?", name, (int)parameter_count);
+
+		}
+		else
+		{
+			sema_error_at(c, extend_span_with_token(params[0]->span, vectail(params)->span),
+						  "The generic module expected %d argument(s), but you supplied %d, did you make a mistake?",
+						  parameter_count,
+						  vec_size(params));
+		}
 		return poisoned_decl;
 	}
 	if (!sema_generate_parameterized_name_to_scratch(c, module, params, true, was_recursive_ref)) return poisoned_decl;
@@ -5302,6 +5431,11 @@ static inline bool sema_analyse_alias(SemaContext *context, Decl *decl, bool *er
 	}
 	decl->type = symbol->type;
 	decl->define_decl.alias = symbol;
+	if (symbol->visibility == VISIBLE_LOCAL && decl->visibility < VISIBLE_LOCAL)
+	{
+		RETURN_SEMA_ERROR(decl, "A local symbol like '%s' may not be aliased to 'private' or 'public' visibility, please change it to at least be '@private'", symbol->name);
+	}
+	// If the symbol is more hidden than the alias, then we must increase the visibility.
 	if (decl_is_externally_visible(decl) && !decl_is_externally_visible(symbol))
 	{
 		symbol->is_external_visible = true;
@@ -5350,8 +5484,7 @@ RETRY:
 		case TYPE_SLICE:
 		case TYPE_FLEXIBLE_ARRAY:
 		case TYPE_INFERRED_ARRAY:
-		case TYPE_VECTOR:
-		case TYPE_INFERRED_VECTOR:
+		case ALL_VECTORS:
 			type = type->array.base;
 			goto RETRY;
 		case TYPE_OPTIONAL:

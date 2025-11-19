@@ -130,7 +130,7 @@ Decl *sema_analyse_parameterized_identifier(SemaContext *c, Path *decl_path, con
                                             Expr **params, bool *was_recursive_ref, SourceSpan invocation_span);
 bool sema_parameterized_type_is_found(SemaContext *context, Path *decl_path, const char *name, SourceSpan span);
 Type *sema_resolve_type_get_func(Signature *signature, CallABI abi);
-INLINE bool sema_set_abi_alignment(SemaContext *context, Type *type, AlignSize *result);
+INLINE bool sema_set_alignment(SemaContext *context, Type *type, AlignSize *result, bool is_alloca);
 INLINE bool sema_set_alloca_alignment(SemaContext *context, Type *type, AlignSize *result);
 INLINE void sema_display_deprecated_warning_on_use(SemaContext *context, Decl *decl, SourceSpan span);
 bool sema_expr_analyse_ct_concat(SemaContext *context, Expr *concat_expr, Expr *left, Expr *right, bool *failed_ref);
@@ -170,15 +170,16 @@ INLINE bool sema_check_left_right_const(SemaContext *context, Expr *left, Expr *
 	return true;
 }
 
-INLINE bool sema_set_abi_alignment(SemaContext *context, Type *type, AlignSize *result)
+INLINE bool sema_set_alignment(SemaContext *context, Type *type, AlignSize *result, bool is_alloca)
 {
+	type = type->canonical;
 	if (type_is_func_ptr(type))
 	{
 		*result = type_abi_alignment(type_voidptr);
 		return true;
 	}
 	if (!sema_resolve_type_decl(context, type)) return false;
-	*result = type_abi_alignment(type);
+	*result = is_alloca ? type_alloca_alignment(type) : type_abi_alignment(type);
 	return true;
 }
 
@@ -201,7 +202,7 @@ INLINE Attr* attr_find_kind(Attr **attrs, AttributeType attr_type)
 INLINE void sema_display_deprecated_warning_on_use(SemaContext *context, Decl *decl, SourceSpan span)
 {
 	ASSERT(decl->resolve_status == RESOLVE_DONE);
-	if (!decl->resolved_attributes || !decl->attrs_resolved || !decl->attrs_resolved->deprecated) return;
+	if (!decl_is_deprecated(decl)) return;
 	if (context->call_env.ignore_deprecation) return;
 	const char *msg = decl->attrs_resolved->deprecated;
 

@@ -355,6 +355,7 @@ bool expr_is_runtime_const(Expr *expr)
 		case EXPR_VECTOR_TO_ARRAY:
 		case EXPR_SLICE_TO_VEC_ARRAY:
 		case EXPR_SCALAR_TO_VECTOR:
+		case EXPR_MAYBE_DEREF:
 			return expr_is_runtime_const(expr->inner_expr);
 		case EXPR_MAKE_SLICE:
 			expr = expr->make_slice_expr.ptr;
@@ -589,8 +590,17 @@ void expr_insert_addr(Expr *original)
 	Expr *inner = expr_copy(original);
 	original->expr_kind = EXPR_UNARY;
 	original->type = new_type;
-	original->unary_expr.operator = UNARYOP_ADDR;
-	original->unary_expr.expr = inner;
+	original->unary_expr = (ExprUnary) { .operator = UNARYOP_ADDR, .expr = inner };
+}
+
+Expr *expr_generated_local(Expr *assign, Decl **decl_ref)
+{
+	Decl *decl = decl_new_generated_var(assign->type, VARDECL_LOCAL, assign->span);
+	Expr *expr_decl = expr_new(EXPR_DECL, decl->span);
+	expr_decl->decl_expr = decl;
+	decl->var.init_expr = assign;
+	*decl_ref = decl;
+	return expr_decl;
 }
 
 Expr *expr_generated_local(Expr *assign, Decl **decl_ref)
@@ -710,8 +720,8 @@ void expr_rewrite_to_const_zero(Expr *expr, Type *type)
 		case TYPE_STRUCT:
 		case TYPE_UNION:
 		case TYPE_BITSTRUCT:
-		case TYPE_VECTOR:
 		case TYPE_ARRAY:
+		case VECTORS:
 			expr_rewrite_const_initializer(expr, type, const_init_new_zero(type));
 			return;
 		case TYPE_TYPEDEF:
@@ -819,6 +829,7 @@ bool expr_is_pure(Expr *expr)
 		case EXPR_RVALUE:
 		case EXPR_RECAST:
 		case EXPR_ADDR_CONVERSION:
+		case EXPR_MAYBE_DEREF:
 			return expr_is_pure(expr->inner_expr);
 		case EXPR_INT_TO_BOOL:
 			return expr_is_pure(expr->int_to_bool_expr.inner);

@@ -6,7 +6,7 @@ import std::math::complex;
 import std::math::matrix;
 import std::math::quaternion;
 
-attrdef @MathLibc(name) = @extern(name), @link(env::POSIX, "m");
+attrdef @MathLibc(name) = @cname(name), @link(env::POSIX, "m");
 
 const E = 2.718281828459045235360287471352662497757247093699959574966967627724076630353547594571382178525166427427466;
 const LOG2E = 1.44269504088896340735992468100189214; // log2(e)
@@ -72,6 +72,11 @@ faultdef OVERFLOW, MATRIX_INVERSE_DOESNT_EXIST;
  @require types::is_numerical($typeof(x)) : `The input must be a numerical value or numerical vector`
 *>
 macro deg_to_rad(x) => x * PI / 180;
+
+<*
+ @require types::is_numerical($typeof(x)) : `The input must be a numerical value or numerical vector`
+*>
+macro rad_to_deg(x) => x * 180 / PI;
 
 <*
  @require types::is_numerical($typeof(x)) : `The input must be a numerical value or numerical vector`
@@ -1042,8 +1047,8 @@ extern fn void _sincosf(float, float*, float*) @MathLibc("__sincosf") @if(env::D
 extern fn void _sincos(double, double*, double*) @MathLibc("sincos") @if(!env::DARWIN && !env::WIN32);
 extern fn void _sincosf(float, float*, float*) @MathLibc("sincosf") @if(!env::DARWIN && !env::WIN32);
 
-fn void _sincos(double a, double* s, double* c) @extern("sincos") @if(env::WIN32) { *s = sin(a); *c = cos(a); }
-fn void _sincosf(float a, float* s, float* c) @extern("sincosf") @if(env::WIN32)  { *s = sin(a); *c = cos(a); }
+fn void _sincos(double a, double* s, double* c) @cname("sincos") @if(env::WIN32) { *s = sin(a); *c = cos(a); }
+fn void _sincosf(float a, float* s, float* c) @cname("sincosf") @if(env::WIN32)  { *s = sin(a); *c = cos(a); }
 
 extern fn double _tan(double x) @MathLibc("tan");
 extern fn float _tanf(float x) @MathLibc("tanf");
@@ -1157,7 +1162,7 @@ macro bool overflow_sub(a, b, out) => $$overflow_sub(a, b, out);
  @require values::@is_flat_intlike(a) &&& values::@is_flat_intlike(b) : "a and b must both be integer or integer vector based"
  @require $defined(*out) &&& @typematch(*out, a) : "out must be a pointer of the same type as a and b"
 *>
-macro bool overflow_mul(a, b, out) => $$overflow_mul(a, b, out);
+macro overflow_mul(a, b, out) => $$overflow_mul(a, b, out);
 
 <*
  @require types::is_vector($Type) || ($Type.kindof == ARRAY &&& types::is_numerical($typefrom($Type.inner)))

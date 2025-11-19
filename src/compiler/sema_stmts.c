@@ -24,7 +24,7 @@ static inline bool sema_analyse_return_stmt(SemaContext *context, Ast *statement
 static inline bool sema_analyse_switch_stmt(SemaContext *context, Ast *statement);
 
 static inline bool sema_check_return_matches_opt_returns(SemaContext *context, Expr *ret_expr);
-static inline bool sema_defer_has_try_or_catch(AstId defer_top, AstId defer_bottom);
+static inline bool sema_defer_has_try_or_catch(AstId defer_top, AstId defer_bottom, bool *has_catch_ref);
 static inline bool sema_analyse_block_exit_stmt(SemaContext *context, Ast *statement);
 static inline bool sema_analyse_defer_stmt_body(SemaContext *context, Ast *statement);
 static inline bool sema_analyse_for_cond(SemaContext *context, ExprId *cond_ref, bool *infinite);
@@ -298,7 +298,7 @@ static inline bool sema_analyse_continue_stmt(SemaContext *context, Ast *stateme
 		// Continue can only be used with "for" statements, skipping the "do {  };" statement
 		if (!ast_supports_continue(jump_target.target))
 		{
-			RETURN_SEMA_ERROR(statement, "'continue' may only be used with 'for', 'while' and 'do-while' statements.");
+			RETURN_SEMA_ERROR(statement, "'continue' may only be used with 'for', 'foreach', 'while' and 'do-while' statements.");
 		}
 	}
 	else
@@ -440,16 +440,26 @@ static inline bool assert_create_from_contract(SemaContext *context, Ast *direct
 }
 
 // Check whether a defer chain contains a try or a catch.
-static inline bool sema_defer_has_try_or_catch(AstId defer_top, AstId defer_bottom)
+static inline bool sema_defer_has_try_or_catch(AstId defer_top, AstId defer_bottom, bool *has_catch_ref)
 {
+	bool has_try = false;
 	while (defer_bottom != defer_top)
 	{
 		Ast *defer = astptr(defer_top);
-		if (defer->defer_stmt.is_catch || defer->defer_stmt.is_try) return true;
+		if (defer->defer_stmt.is_catch)
+		{
+			if (has_catch_ref) *has_catch_ref = true;
+			return true;
+		}
+		if (defer->defer_stmt.is_try)
+		{
+			has_try = true;
+		}
 		defer_top = defer->defer_stmt.prev_defer;
 	}
-	return false;
+	return has_try;
 }
+
 
 // Print defers at return (from macro/block or from function)
 static inline void sema_inline_return_defers(SemaContext *context, Ast *stmt, AstId defer_bottom)
@@ -458,9 +468,11 @@ static inline void sema_inline_return_defers(SemaContext *context, Ast *stmt, As
 	stmt->return_stmt.cleanup = context_get_defers(context, defer_bottom, true);
 
 	// If we have an optional return, then we create a cleanup_fail
+	bool has_catch = false;
 	if (stmt->return_stmt.expr && IS_OPTIONAL(stmt->return_stmt.expr)
-		&& sema_defer_has_try_or_catch(context->active_scope.defer_last, context->block_return_defer))
+		&& sema_defer_has_try_or_catch(context->active_scope.defer_last, context->block_return_defer, &has_catch))
 	{
+		stmt->return_stmt.cleanup_catch = has_catch;
 		stmt->return_stmt.cleanup_fail = context_get_defers(context, context->block_return_defer, false);
 		return;
 	}
@@ -494,6 +506,11 @@ static inline bool sema_check_return_matches_opt_returns(SemaContext *context, E
 		if (opt == fault) return true;
 	}
 	// No match
+	FOREACH(Decl *, opt, context->call_env.opt_returns)
+	{
+		assert(opt->decl_kind == DECL_FAULT);
+		if (opt == fault) return true;
+	}
 	RETURN_SEMA_ERROR(ret_expr, "This value does not match declared optional returns, it needs to be declared with the other optional returns.");
 }
 
@@ -852,6 +869,7 @@ static inline bool sema_expr_valid_try_expression(Expr *expr)
 		case EXPR_RECAST:
 		case EXPR_ADDR_CONVERSION:
 		case EXPR_ENUM_FROM_ORD:
+		case EXPR_MAYBE_DEREF:
 			return true;
 		case EXPR_TWO:
 			return sema_expr_valid_try_expression(expr->two_expr.last);
@@ -1217,7 +1235,7 @@ static inline bool sema_analyse_ct_type_assign_stmt(SemaContext *context, Ast *s
 
 	Decl *decl = sema_find_symbol(context, statement->ct_type_assign_stmt.var_name);
 	if (!decl) RETURN_SEMA_ERROR(statement, "'%s' is not defined in this scope yet.", statement->ct_type_assign_stmt.var_name);
-
+	if (decl_is_defaulted_var(decl)) RETURN_SEMA_ERROR(statement, "The parameter '%s' was not provided by the caller.", decl->name);
 	decl->var.init_expr = right;
 	statement->ast_kind = AST_NOP_STMT;
 
@@ -1540,6 +1558,7 @@ static inline bool sema_analyse_foreach_stmt(SemaContext *context, Ast *statemen
 		RETURN_SEMA_ERROR(var, "Add an explicit type to the variable if you want to iterate over an initializer list.");
 	}
 
+	Type *original_type = enumerator->type;
 	// In the case of a single `*`, then we will implicitly dereference that pointer.
 	if (canonical->type_kind == TYPE_POINTER)
 	{
@@ -1549,6 +1568,7 @@ static inline bool sema_analyse_foreach_stmt(SemaContext *context, Ast *statemen
 			RETURN_SEMA_ERROR(enumerator, "It is not possible to enumerate an expression of type %s.", type_quoted_error_string(enumerator->type));
 		}
 		if (!sema_expr_rewrite_insert_deref(context, enumerator)) return false;
+		canonical = enumerator->type->canonical;
 	}
 
 	// At this point we should have dereferenced any pointer or bailed.
@@ -1594,7 +1614,7 @@ static inline bool sema_analyse_foreach_stmt(SemaContext *context, Ast *statemen
 			if (value_type) goto SKIP_OVERLOAD;
 
 			// Otherwise this is an error.
-			RETURN_SEMA_ERROR(enumerator, "It's not possible to enumerate an expression of type %s.", type_quoted_error_string(enumerator->type));
+			RETURN_SEMA_ERROR(enumerator, "It's not possible to enumerate an expression of type %s.", type_quoted_error_string(original_type));
 		}
 		// If we want the value "by ref" and there isn't a &[], then this is an error.
 		if (!by_ref && value_by_ref)
@@ -1730,7 +1750,7 @@ SKIP_OVERLOAD:;
 		switch (enumerator_type->type_kind)
 		{
 			case TYPE_ARRAY:
-			case TYPE_VECTOR:
+			case VECTORS:
 				array_len = enumerator_type->array.len;
 				len_call = NULL;
 				break;
@@ -2842,7 +2862,7 @@ static inline bool sema_analyse_ct_foreach_stmt(SemaContext *context, Ast *state
 		INITIALIZER:;
 			ConstInitType init_type = initializer->kind;
 			const_list_type = type_flatten(collection->type);
-			if (const_list_type->type_kind == TYPE_ARRAY || const_list_type->type_kind == TYPE_VECTOR)
+			if (const_list_type->type_kind == TYPE_ARRAY || type_kind_is_real_vector(const_list_type->type_kind))
 			{
 				count = const_list_type->array.len;
 			}
@@ -3110,8 +3130,13 @@ static inline bool sema_analyse_ct_for_stmt(SemaContext *context, Ast *statement
 	// We set a maximum of macro iterations.
 	// we might consider reducing this.
 	unsigned current_ct_scope = sema_context_push_ct_stack(context);
-	for (int i = 0; i < MAX_MACRO_ITERATIONS; i++)
+	for (int i = 0; ; i++)
 	{
+		if (i >= compiler.build.max_macro_iterations)
+		{
+			SEMA_ERROR(statement, "Too many iterations in '$for' (it exceeded %d), you can change this limit using '--max-macro-iterations'.", compiler.build.max_macro_iterations);
+			goto FAILED;
+		}
 		sema_context_pop_ct_stack(context, current_ct_scope);
 		// First evaluate the cond, which we note that we *must* have.
 		// we need to make a copy
@@ -3277,14 +3302,59 @@ static bool sema_analyse_optional_returns(SemaContext *context, Ast *directive)
 {
 	FOREACH(Ast *, ret, directive->contract_stmt.faults)
 	{
-		if (ret->contract_fault.resolved) continue;
-		Expr *expr = ret->contract_fault.expr;
-		if (expr->expr_kind != EXPR_UNRESOLVED_IDENTIFIER && !expr->unresolved_ident_expr.is_const)
+		if (ret->contract_fault.expanding) continue;
+		if (ret->contract_fault.resolved)
 		{
-			RETURN_SEMA_ERROR(expr, "Expected a fault name here.");
+			vec_add(context->call_env.opt_returns, ret->contract_fault.decl);
+			continue;
 		}
+		Expr *expr = ret->contract_fault.expr;
+		if (expr->expr_kind == EXPR_RETHROW)
+		{
+			Expr *inner = expr->rethrow_expr.inner;
+			if (!sema_analyse_expr(context, inner)) return false;
+			Decl *decl;
+			switch (inner->expr_kind)
+			{
+				case EXPR_IDENTIFIER:
+					decl = inner->ident_expr;
+					break;
+				case EXPR_TYPEINFO:
+				{
+					Type *type = inner->type_expr->type;
+					if (type->type_kind != TYPE_ALIAS) goto IS_FAULT;
+					decl = type->decl;
+					ASSERT(decl->decl_kind == DECL_TYPE_ALIAS);
+					if (!decl->type_alias_decl.is_func) goto IS_FAULT;
+					decl = decl->type_alias_decl.decl;
+					break;
+				}
+				default:
+					goto IS_FAULT;;
+			}
+			decl = decl_flatten(decl);
+			if (decl->decl_kind != DECL_FNTYPE && decl->decl_kind != DECL_FUNC) goto IS_FAULT;
+			if (!sema_analyse_decl(context, decl)) return false;
+			AstId docs = decl->decl_kind == DECL_FNTYPE ? decl->fntype_decl.docs : decl->func_decl.docs;
+			while (docs)
+			{
+				Ast *doc = astptr(docs);
+				docs = doc->next;
+				if (doc->contract_stmt.kind != CONTRACT_OPTIONALS) continue;
+				ret->contract_fault.expanding = true;
+				bool success = sema_analyse_optional_returns(context, doc);
+				ret->contract_fault.expanding = false;
+				if (!success) false;
+			}
+			continue;
+		}
+IS_FAULT:;
 		if (!sema_analyse_expr_rvalue(context, expr)) return false;
-		if (!expr_is_const_fault(expr)) RETURN_SEMA_ERROR(expr, "A fault is required.");
+		if (expr->type->canonical != type_fault)
+		{
+			RETURN_SEMA_ERROR(expr, "Expected a fault here.");
+		}
+		if (!expr_is_const_fault(expr)) RETURN_SEMA_ERROR(expr, "A constant fault is required.");
 		Decl *decl = expr->const_expr.fault;
 		if (!decl) RETURN_SEMA_ERROR(expr, "A non-null fault is required.");
 		ret->contract_fault.decl = decl;
@@ -3338,8 +3408,10 @@ bool sema_analyse_contracts(SemaContext *context, AstId doc, AstId **asserts, So
 
 bool sema_analyse_function_body(SemaContext *context, Decl *func)
 {
+	// Stop if it's already poisoned.
 	if (!decl_ok(func)) return false;
 
+	// Check the signature here we test for variadic raw, since we don't support it.
 	Signature *signature = &func->func_decl.signature;
 	if (signature->variadic == VARIADIC_RAW)
 	{
@@ -3347,8 +3419,12 @@ bool sema_analyse_function_body(SemaContext *context, Decl *func)
 						  " please use typed vaargs on the form 'int... args' or "
 						  "untyped vaargs on the form 'args...' instead.");
 	}
+
+	// Pull out the prototype
 	FunctionPrototype *prototype = func->type->function.prototype;
-	ASSERT(prototype);
+	ASSERT_SPAN(func, prototype);
+
+	// Set up the context for analysis
 	context->original_inline_line = 0;
 	context->original_module = NULL;
 	context->call_env = (CallEnv) {
@@ -3356,23 +3432,23 @@ bool sema_analyse_function_body(SemaContext *context, Decl *func)
 		.is_naked_fn = func->func_decl.attr_naked,
 		.kind = CALL_ENV_FUNCTION,
 		.pure = func->func_decl.signature.attrs.is_pure,
-		.ignore_deprecation = func->allow_deprecated || (func->resolved_attributes && func->attrs_resolved && func->attrs_resolved->deprecated && func->resolved_attributes && func->attrs_resolved->deprecated)
+		.ignore_deprecation = func->allow_deprecated || decl_is_deprecated(func)
 	};
-	context->rtype = prototype->rtype;
+
+	Type *rtype = context->rtype = typeget(signature->rtype);
 	context->macro_call_depth = 0;
 	context->active_scope = (DynamicScope) {
-			.scope_id = 0,
 			.depth = 0,
 			.label_start = 0,
 			.current_local = 0
 	};
 	vec_resize(context->ct_locals, 0);
-
 	// Clear returns
 	vec_resize(context->block_returns, 0);
-	context->scope_id = 0;
+	// Zero out any jumps
 	context->break_jump = context->continue_jump = context->next_jump = (JumpTarget) { .target = NULL };
-	ASSERT(func->func_decl.body);
+	ASSERT_SPAN(func, func->func_decl.body);
+
 	Ast *body = astptr(func->func_decl.body);
 	Decl **lambda_params = NULL;
 	SCOPE_START
@@ -3383,6 +3459,8 @@ bool sema_analyse_function_body(SemaContext *context, Decl *func)
 		}
 		if (func->func_decl.is_lambda)
 		{
+			// If we're a lambda we need to pass on the compile time values that will
+			// be baked into the function.
 			lambda_params = copy_decl_list_single(func->func_decl.lambda_ct_parameters);
 			FOREACH(Decl *, ct_param, lambda_params)
 			{
@@ -3397,7 +3475,7 @@ bool sema_analyse_function_body(SemaContext *context, Decl *func)
 		context->call_env.ensures = has_ensures;
 		bool is_naked = func->func_decl.attr_naked;
 		if (!is_naked) sema_append_contract_asserts(assert_first, body);
-		Type *canonical_rtype = type_no_optional(prototype->rtype)->canonical;
+		Type *canonical_rtype = type_no_optional(rtype)->canonical;
 		if (!is_naked && has_ensures && type_is_void(canonical_rtype))
 		{
 			AstId* append_pos = &body->compound_stmt.first_stmt;
