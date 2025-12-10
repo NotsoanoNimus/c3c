@@ -1,5 +1,30 @@
 # C3C Release Notes
 
+
+## 0.7.9 Change list
+
+### Changes / improvements
+- Add `--custom-libc` option for custom libc implementations.
+
+### Fixes
+- Regression with npot vector in struct triggering an assert #2219.
+- Casting bitstruct to wider base type should be single step #2616.
+- Optional does not play well with bit ops #2618.
+- `Bytebuffer.grow` was broken #2622.
+- Hex escapes like `"\x80"` would be incorrectly lowered. #2623
+- Ignore const null check on deref in `$defined` and `$sizeof` #2633.
+- Subscripting of constant slices would sometimes be considered non-constant #2635.
+
+### Stdlib changes
+- Add `ThreadPool` join function to wait for all threads to finish in the pool without destroying the threads.
+- Return of Thread/Mutex/CondVar `destroy()` is now "@maydiscard" and should be ignored. It will return void in 0.8.0.
+- Return of Mutex `unlock()` and `lock()` is now "@maydiscard" and should be ignored. They will return void in 0.8.0.
+- Return of ConditionVariable `signal()` `broadcast()` and `wait()` are now "@maydiscard". They will return void in 0.8.0.
+- Return of Thread `detatch()` is now "@maydiscard". It will return void in 0.8.0.
+- Buffered/UnbufferedChannel, and both ThreadPools have `@maydiscard` on a set of functions. They will retunr void in 0.8.0.
+- Pthread bindings correctly return Errno instead of CInt.
+- Return of Thread `join()` is now "@maydiscard".
+
 ## 0.7.8 Change list
 
 ### Changes / improvements
@@ -71,6 +96,20 @@
 ### Changes / improvements
 - Error when using $vaarg/$vacount/$vasplat and similar in a macro without vaargs #2510.
 - Add splat defaults for designated initialization #2441.
+- Add new builtins `$$str_snakecase` `$$str_replace` and `$$str_pascalcase`.
+- `"build-dir"` option now available for `project.json`, added to project. #2323
+- Allow `..` ranges to use "a..a-1" in order to express zero length.
+- Disallow aliasing of `@local` symbols with a higher visibility in the alias.
+- Add `--max-macro-iterations` to set macro iteration limit.
+- Improved generic inference in initializers #2541.
+- "Maybe-deref" subscripting `foo.[i] += 1` #2540.
+- ABI change for vectors: store and pass them as arrays #2542.
+- Add @simd and @align attributes to typedef #2543.
+- Rename `@extern` to `@cname`, deprecating the old name #2493.
+- Allow `(Foo)0` bitstruct casts even if type sizes do not match.
+- The option `--riscvfloat` renamed `--riscv-abi`.
+- Add initial `--cpu-flags` allowing fine grained control over CPU features.
+- Add `--riscv-cpu` settings for RISC-V processors #2549.
 
 ### Fixes
 - Bug in `io::write_using_write_byte`.
@@ -101,7 +140,7 @@
 - Unify generic and regular module namespace.
 - `env::PROJECT_VERSION` now returns the version in project.json.
 - Comparing slices and arrays of user-defined types that implement == operator now works #2486.
-- Add 'loop-vectorize', 'slp-vectorize', 'unroll-loops' and 'merge-functions' optimization flags #2491. 
+- Add 'loop-vectorize', 'slp-vectorize', 'unroll-loops' and 'merge-functions' optimization flags #2491.
 - Add exec timings to -vv output #2490.
 - Support #! as a comment on the first line only.
 - Add `+++=` operator.
@@ -175,7 +214,7 @@
 - `@assignable_to` is deprecated in favour of `$define`
 - Add `linklib-dir` to c3l-libraries to place their linked libraries in. Defaults to `linked-libs`
 - If the `os-arch` linked library doesn't exist, try with `os` for c3l libs.
-- A file with an inferred module may not contain additional other modules. 
+- A file with an inferred module may not contain additional other modules.
 - Update error message for missing body after if/for/etc #2289.
 - `@is_const` is deprecated in favour of directly using `$defined`.
 - `@is_lvalue(#value)` is deprecated in favour of directly using `$defined`.
