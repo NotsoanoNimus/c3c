@@ -144,7 +144,6 @@
 - Bitstruct truncated constant error escapes `$defined` #2515.
 - Compiler segfault when accessing member of number cast to bitstruct #2516.
 - Compiler assert when getting a member of a `bitstruct : char @bigendian` #2517.
-- Incorrect visibility on local globals with public aliases. #2519
 - Add ??? and +++= to list-precedence.
 - Fix issues with linking when using symbol aliases. #2519
 - Splatting optional compile-time macro parameter from inside lambda expression does not work #2532.
@@ -155,6 +154,10 @@
 
 ### Stdlib changes
 - Sorting functions correctly took slices by value, but also other types by value. Now, only slices are accepted by value, other containers are always by ref.
+- Added `@str_snakecase`, `@str_replace` and `@str_pascalcase` builtin compile time macros based on the `$$` builtins.
+- Add TcpSocketPair to create a bidirectional local socket pair.
+- Add `extern fn CInt socketpair(AIFamily domain, AISockType type, CInt protocol, NativeSocket[2]* sv)` binding to posix.
+- Add `extern fn getsockname(NativeSocket socket, SockAddrPtr address, Socklen_t* address_len)` binding to win32.
 
 ## 0.7.6 Change list
 
@@ -268,7 +271,7 @@
 - Formatter did not properly handle "null" for any, and null for empty faults. #2375
 - Bitstructs no longer overloadable with bitops. #2374
 - types::has_equals fails with assert for bitstructs #2377
-- Fix `native_cpu` functionality for OpenBSD systems. #2387
+- Fix `native_cpus` functionality for OpenBSD systems. #2387
 - Assert triggered when trying to slice a struct.
 - Improve codegen for stack allocated large non-zero arrays.
 - Implement `a5hash` in the compiler for compile-time `$$str_hash` to match `String.hash()`.
@@ -364,7 +367,6 @@
 - Allow absolute paths for `$embed`.
 - Add `@try` and `@try_catch`.
 - Assignment evaluation order now right->left, following C++17 and possibly C23.
-- Add compile-time `@intlog2` macro to math.
 
 ### Fixes
 - mkdir/rmdir would not work properly with substring paths on non-windows platforms.

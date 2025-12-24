@@ -11021,36 +11021,14 @@ static inline bool sema_expr_analyse_ct_defined(SemaContext *context, Expr *expr
 				if (!decl_ok(decl)) goto FAIL;
 				success = decl != NULL && !decl_is_defaulted_var(decl);
 				break;
-		case EXPR_UNRESOLVED_IDENTIFIER:
-		{
-			Decl *decl = sema_find_path_symbol(active_context, main_expr->unresolved_ident_expr.ident, main_expr->unresolved_ident_expr.path);
-			if (!decl_ok(decl)) goto FAIL;
-			success = decl != NULL;
-			break;
-		}
-		case EXPR_HASH_IDENT:
-		{
-			if (unroll_hash)
-			{
-				Decl *decl = sema_resolve_symbol(active_context, main_expr->hash_ident_expr.identifier, NULL, main_expr->span);
-				if (!decl) goto FAIL;
-				bool is_ref = main_expr->hash_ident_expr.is_ref;
-				main_expr = copy_expr_single(decl->var.init_expr);
-				if (is_ref) expr_set_to_ref(main_expr);
-				goto RETRY;
 			}
-			Decl *decl = sema_find_symbol(active_context, main_expr->hash_ident_expr.identifier);
-			if (!decl_ok(decl)) goto FAIL;
-			success = decl != NULL;
-			break;
-		}
-		case EXPR_COMPILER_CONST:
+			case EXPR_COMPILER_CONST:
 				success = sema_expr_analyse_compiler_const(active_context, main_expr, false);
 				break;
-		case EXPR_BUILTIN:
+			case EXPR_BUILTIN:
 				success = sema_expr_analyse_builtin(active_context, main_expr, false);
 				break;
-		case EXPR_UNARY:
+			case EXPR_UNARY:
 				main_expr->resolve_status = RESOLVE_RUNNING;
 				if (!sema_expr_analyse_unary(active_context, main_expr, &failed))
 				{
@@ -11058,38 +11036,26 @@ static inline bool sema_expr_analyse_ct_defined(SemaContext *context, Expr *expr
 					success = false;
 				}
 				break;
-		case EXPR_TYPEINFO:
-		{
-			Type *type = sema_expr_check_type_exists(active_context, main_expr->type_expr);
-			if (!type_ok(type)) goto FAIL;
-			success = type != NULL;
-			break;
-		}
-		case EXPR_CT_EVAL:
-		{
-			Expr *eval = sema_ct_eval_expr(active_context, "$eval", main_expr->inner_expr, false);
-			if (!expr_ok(eval)) return false;
-			if (eval)
+			case EXPR_TYPEINFO:
 			{
-				main_expr = eval;
-				goto RETRY;
+				Type *type = sema_expr_check_type_exists(active_context, main_expr->type_expr);
+				if (!type_ok(type)) goto FAIL;
+				success = type != NULL;
+				break;
 			}
-			success = false;
-			break;
-		}
-		case EXPR_SUBSCRIPT:
-		{
-			if (!sema_expr_analyse_subscript(active_context, main_expr, &failed))
+			case EXPR_CT_EVAL:
 			{
-				if (!failed) goto FAIL;
+				Expr *eval = sema_ct_eval_expr(active_context, "$eval", main_expr->inner_expr, false);
+				if (!expr_ok(eval)) return false;
+				if (eval)
+				{
+					main_expr = eval;
+					goto RETRY;
+				}
 				success = false;
+				break;
 			}
-			break;
-		}
-		case EXPR_CAST:
-		{
-			TypeInfo *typeinfo = type_infoptr(main_expr->cast_expr.type_info);
-			if (typeinfo->resolve_status == RESOLVE_DONE && typeinfo->type == type_void)
+			case EXPR_SUBSCRIPT:
 			{
 				if (!sema_expr_analyse_subscript(active_context, main_expr, &failed))
 				{
@@ -11098,24 +11064,23 @@ static inline bool sema_expr_analyse_ct_defined(SemaContext *context, Expr *expr
 				}
 				break;
 			}
-			if (!sema_expr_analyse_cast(active_context, main_expr, &failed))
+			case EXPR_CAST:
 			{
-				if (!failed) goto FAIL;
-				success = false;
+				TypeInfo *typeinfo = type_infoptr(main_expr->cast_expr.type_info);
+				if (typeinfo->resolve_status == RESOLVE_DONE && typeinfo->type == type_void)
+				{
+					main_expr = exprptr(main_expr->cast_expr.expr);
+					unroll_hash = true;
+					goto RETRY;
+				}
+				if (!sema_expr_analyse_cast(active_context, main_expr, &failed))
+				{
+					if (!failed) goto FAIL;
+					success = false;
+				}
+				break;
 			}
-			break;
-		}
-		case EXPR_CT_IDENT:
-		{
-			Decl *decl = sema_find_symbol(active_context, main_expr->ct_ident_expr.identifier);
-			if (!decl_ok(decl)) goto FAIL;
-			success = decl != NULL;
-			break;
-		}
-		case EXPR_CALL:
-		{
-			bool no_match;
-			if (!sema_expr_analyse_call(active_context, main_expr, &no_match))
+			case EXPR_CT_IDENT:
 			{
 				Decl *decl = sema_find_symbol(active_context, main_expr->ct_ident_expr.identifier);
 				if (!decl_ok(decl)) goto FAIL;

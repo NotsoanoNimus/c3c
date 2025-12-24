@@ -4,7 +4,7 @@
 module non_crypto_benchmarks;
 
 
-const usz COMMON_ITERATIONS = 1 << 24;
+const usz COMMON_ITERATIONS = 1 << 18;
 
 const char[] COMMON_1 = { 0xA5 };
 const char[] COMMON_4 = { 0xA5, 0xA5, 0xA5, 0xA5, };
@@ -18,8 +18,8 @@ const char[] COMMON_1024 = { [0..1023] = 0xA5 };
 
 fn void initialize_bench() @init
 {
-	set_benchmark_warmup_iterations(64);
-	set_benchmark_max_iterations(COMMON_ITERATIONS);
+	set_benchmark_warmup_iterations(3);
+	set_benchmark_max_iterations(COMMON_ITERATIONS + 3);
 }
 
 

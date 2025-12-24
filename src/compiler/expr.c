@@ -603,16 +603,6 @@ Expr *expr_generated_local(Expr *assign, Decl **decl_ref)
 	return expr_decl;
 }
 
-Expr *expr_generated_local(Expr *assign, Decl **decl_ref)
-{
-	Decl *decl = decl_new_generated_var(assign->type, VARDECL_LOCAL, assign->span);
-	Expr *expr_decl = expr_new(EXPR_DECL, decl->span);
-	expr_decl->decl_expr = decl;
-	decl->var.init_expr = assign;
-	*decl_ref = decl;
-	return expr_decl;
-}
-
 Expr *expr_generate_decl(Decl *decl, Expr *assign)
 {
 	ASSERT(decl->decl_kind == DECL_VAR);
