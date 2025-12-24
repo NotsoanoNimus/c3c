@@ -208,6 +208,7 @@ fn bool print_backtrace(String message, int backtraces_to_ignore, void *added_ba
 
 fn void default_panic(String message, String file, String function, uint line) @if(env::NATIVE_STACKTRACE)
 {
+	in_panic = true;
 	$if $defined(io::stderr) && env::PANIC_MSG:
 		if (!print_backtrace(message, 2))
 		{
@@ -224,7 +225,7 @@ macro void abort(String string = "Unrecoverable error reached", ...) @format(0) 
 	$$trap();
 }
 
-bool in_panic @local = false;
+bool in_panic @private = false;
 
 fn void default_panic(String message, String file, String function, uint line) @if (!env::NATIVE_STACKTRACE)
 {
@@ -450,11 +451,24 @@ macro @prefetch(void* ptr, PrefetchLocality $locality = VERY_NEAR, bool $write =
 	$endif
 }
 
+<*
+ Shuffle a vector by its index
+ 
+ int[<4>] a = { 1, 2, 3, 4 };
+ assert(swizzle(a, 0, 1, 1, 3) == (int[<4>]) { 1, 2, 2, 4 });
+*>
 macro swizzle(v, ...) @builtin
 {
 	return $$swizzle(v, $vasplat);
 }
 
+<*
+ Shuffle two vectors by a common index from arranging the vectors sequentially in memory
+
+ int[<4>] a = { 1, 2, 3, 4 };
+ int[<4>] b = { 100, 1000, 10000, 100000 };
+ assert(swizzle2(a, b, 0, 1, 4, 6, 2) == (int[<5>]) { 1, 2, 100, 10000, 3 });
+*>
 macro swizzle2(v, v2, ...) @builtin
 {
 	return $$swizzle2(v, v2, $vasplat);
@@ -997,7 +1011,7 @@ fn void sig_bus_error(CInt i, void* info, void* context)
 			}
 		$endif
 	$endif
-	$$trap();
+	os::fastexit(128 + i);
 }
 
 fn void sig_segmentation_fault(CInt i, void* p1, void* context)
@@ -1012,15 +1026,39 @@ fn void sig_segmentation_fault(CInt i, void* p1, void* context)
 			}
 		$endif
 	$endif
-	$$trap();
+	os::fastexit(128 + i);
 }
 
+fn void sig_illegal_instruction(CInt i, void* p1, void* context)
+{
+	if (in_panic) os::fastexit(128 + i);
+	$if !env::NATIVE_STACKTRACE:
+		sig_panic("Illegal instruction.");
+	$else
+		$if $defined(io::stderr):
+			if (!print_backtrace("Illegal instruction.", 2, posix::stack_instruction(context)))
+			{
+				io::eprintn("\nERROR: Illegal instruction.");
+			}
+		$endif
+	$endif
+	os::fastexit(128 + i);
+}
 
+char[64 * 1024] sig_stack @local @if(env::BACKTRACE && env::LINUX);
 
 // Clean this up
 fn void install_signal_handlers() @init(101) @local @if(env::BACKTRACE)
 {
+	$if env::LINUX:
+		Stack_t ss = {
+			.ss_sp = &sig_stack,
+			.ss_size = sig_stack.len
+		};
+		libc::sigaltstack(&ss, null);
+	$endif
+
 	posix::install_signal_handler(libc::SIGBUS, &sig_bus_error);
 	posix::install_signal_handler(libc::SIGSEGV, &sig_segmentation_fault);
+	posix::install_signal_handler(libc::SIGILL,  &sig_illegal_instruction);
 }
-
