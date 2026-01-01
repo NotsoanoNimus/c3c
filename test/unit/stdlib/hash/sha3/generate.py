@@ -51,7 +51,7 @@ def get_digests(levels, digest_func):
 	for bits in levels:
 		res[bits] = {
 			'empty':	digest_func(bits, ""),
-			'slow':		digest_func(bits, "".join(['a'] * 100000000)),
+			'slow':		digest_func(bits, "".join(['a'] * 1_000_000)),
 			'simple':	[digest_func(bits, i) for i in simple],
 			'a...':		[digest_func(bits, "".join(list_of_a[0:(1+i*64)])) for i in range(5)],
 		}
@@ -109,11 +109,11 @@ def get_kmacs(levels, trim_lengths, keys, customization_strings, kmac_func):
 def main():
 	res = {
 		# 'KECCAK':		get_digests([224, 256, 384, 512], keccak_digest),
-		# 'SHA3':			get_digests([224, 256, 384, 512], sha3_digest),
+		'SHA3':			get_digests([224, 256, 384, 512], sha3_digest),
 		# 'SHAKE':		get_xofs([128, 256], [16, 256], [''], shake_xof),
 		# 'TURBO-SHAKE':	get_xofs([128, 256], [16, 256], [''], turboshake_xof),
 		# 'CSHAKE':		get_xofs([128, 256], [64], sample_custom_strs, cshake_xof),
-		'KMAC':			get_kmacs([128, 256], [32, 64, 128], sample_kmac_keys, sample_custom_strs, kmac),
+		# 'KMAC':			get_kmacs([128, 256], [32, 64, 128], sample_kmac_keys, sample_custom_strs, kmac),
 	}
 	pprint.pprint(res)
 

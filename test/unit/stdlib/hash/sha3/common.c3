@@ -55,8 +55,7 @@ const String STREAM_VECTOR =
 macro get_bigboi()
 {
 	// 100 million 'a' characters
-	char[] bigboi = allocator::new_array(tmem, char, 100_000_000);
-	mem::set(bigboi.ptr, 'a', bigboi.len);
-
+	char[] bigboi = mem::talloc_array(char, 1_000_000);
+	bigboi[..] = 'a';
 	return bigboi;
 }
