@@ -6,7 +6,8 @@ module std::hash::sha3::sha3;
 
 import std::hash::sha3::keccak;
 
-const usz[] DIGEST_SIZES = { 224, 256, 384, 512 };
+const usz[] DIGEST_SIZES = keccak::SECURITY_LEVELS;
+const DEFAULT_DELIMITER = 0x06;
 
 <*
 @require @in(HASH_BITS, ...DIGEST_SIZES) : "You must use a valid SHA-3 digest size."
@@ -24,4 +25,13 @@ fn char[HASH_BITS / 8] hash(char[] data) @generic(HASH_BITS)
 <*
 @require @in(HASH_BITS, ...DIGEST_SIZES) : "You must use a valid SHA-3 digest size."
 *>
-alias Sha3 @generic(HASH_BITS) = $typefrom(keccak::keccak(HASH_BITS, $delimiter: 0x06));
+struct Sha3 @generic(HASH_BITS)
+{
+	inline Keccak{HASH_BITS} k;
+}
+
+fn void Sha3.init(&self) @inline
+{
+	mem::zero_volatile(@as_char_view(*self));
+	self.k.init(runtime_delimiter: DEFAULT_DELIMITER);
+}

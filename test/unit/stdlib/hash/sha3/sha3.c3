@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Zack Puhl <github@xmit.xyz>. All rights reserved.
+// Copyright (c) 2025-2026 Zack Puhl <github@xmit.xyz>. All rights reserved.
 // Use of this source code is governed by the MIT license
 // a copy of which can be found in the LICENSE_STDLIB file.
 module sha3::sha3_tests @test;
@@ -59,7 +59,7 @@ fn void sha3_empty()
 
 fn void sha3_simple()
 {
-	String[][] expected = {
+	static String[][] expected = {
 		{
 			x"602bdc204140db016bee5374895e5568ce422fabe17e064061d80097",
 			x"a03ab19b866fc585b5cb1812a2f63ca861e7e7643ee5d43fd7106b623725fd67",
@@ -91,20 +91,17 @@ fn void sha3_simple()
 			x"ff4c4824e28345ba460b358514dd161dc9992b33e9e419035991bf25cd7b66b67d1acc5f28238c3f0e5a2bfd28c1133e46dfcc565cbcb95a5876c9fcdc65df64",
 		},
 	};
-
 	foreach (i, v : tests_common::SIMPLE_VECTORS)
 	{
 		$foreach $i, $sz : sha3::DIGEST_SIZES:
-			test::@check(sha3::hash{$sz}(v[..])[..] == expected[i][0][..], @sprintf("%s: Hash mismatch.", $sz));
+			test::@check(sha3::hash{$sz}(v[..])[..] == expected[i][$i][..], @sprintf("%s: Hash mismatch.", $sz));
 		$endforeach
 	}
 }
 
 fn void sha3_interval()
 {
-	char[257] x = { [0..256] = 'a' };
-
-	String[][] expected = {
+	static String[][] expected = {
 		{
 			x"9e86ff69557ca95f405f081269685b38e3a819b309ee942f482b6a8b",
 			x"80084bf2fba02475726feb2cab2d8215eab14bc6bdd8bfb2c8151257032ecd8b",
@@ -136,7 +133,7 @@ fn void sha3_interval()
 			x"5008048b64c14975181175f157be4a780c3d443d2177edf323d57884bc7e3979b9b53bca1325e880df3da0d97c435693441cb5527fbe950f5585678dfbb37785",
 		},
 	};
-
+	char[257] x = { [0..256] = 'a' };
 	// 'a'-array of lengths [1, 65, 129, 193, 257]
 	for (usz i = 1, usz j = 0; i <= 257; i += 64, ++j)
 	{
@@ -148,14 +145,13 @@ fn void sha3_interval()
 
 fn void sha3_streamed()
 {
-	static String s = tests_common::STREAM_VECTOR;
 	static String[] expected = {
 		x'79a4cf51cfa5bff236652238616166a334603e2839c58f51f6be45d0',
 		x'9c18f4c0b611ae8e61c61ee1c221aeb0826df14603100ed25b157a584a73c76d',
 		x'30a9e008d31e57658633ef85418081d0cd9b7f5b9bcad88ee4cb80e712184495fb944a2f9b6e42904e70b7085824b3f2',
 		x'f21389f669b658ddb19ef62c284aa67e4b079f25d16abc9355d2e62d1e1ffc8f2304390fd3ce0b0a0a6566db6db8d9e88897b4ffd25fa88de786bebdd88a3455',
 	};
-
+	static String s = tests_common::STREAM_VECTOR;
 	$foreach $i, $sz : sha3::DIGEST_SIZES:
 	{
 		char[$sz / 8] hash;
@@ -177,7 +173,6 @@ fn void sha3_large() @if($feature(SLOW_TESTS))
 		x'eee9e24d78c1855337983451df97c8ad9eedf256c6334f8e948d252d5e0e76847aa0774ddb90a842190d2c558b4b8340',
 		x'3c3a876da14034ab60627c077bb98f7e120a2a5370212dffb3385a18d4f38859ed311d0a9d5141ce9cc5c66ee689b266a8aa18ace8282a0e0db596c90b0a7b87',
 	};
-
 	char[] bigboi = tests_common::get_bigboi();
 	$foreach $i, $sz : sha3::DIGEST_SIZES:
 		test::@check(sha3::hash{$sz}(bigboi[..])[..] == expected[$i]);

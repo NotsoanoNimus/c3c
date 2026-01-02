@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Zack Puhl <github@xmit.xyz>. All rights reserved.
+// Copyright (c) 2025-2026 Zack Puhl <github@xmit.xyz>. All rights reserved.
 // Use of this source code is governed by the MIT license
 // a copy of which can be found in the LICENSE_STDLIB file.
 //
@@ -13,7 +13,7 @@ import std::hash::sha3::keccak;
 import std::hash::sha3::cshake;
 import std::hash::sha3::nist @public;
 
-import std::io;   // REMOVE ME REMOVE ME REMOVE ME REMOVE ME REMOVE ME REMOVE ME REMOVE ME REMOVE ME 
+import std::io;   // REMOVE ME REMOVE ME REMOVE ME REMOVE ME REMOVE ME REMOVE ME REMOVE ME REMOVE ME
 import std::math;
 import std::thread;
 
@@ -26,18 +26,11 @@ macro clamp_threads(amount) => math::clamp(amount, 1, MAX_THREADS);
 const MAX_BLOCK_SIZE = 128 * 1024 * 1024;   // 128 MiB
 macro clamp_block_size(size) => math::clamp(size, 1, MAX_BLOCK_SIZE);
 
-macro char[*] apply_simple_cshake(char[] data)
-{
-	$switch SECURITY_LEVEL:
-	$case 128: return cshake::xof_128(INTERMEDIATE_XOF_SIZE, data);
-	$case 256: return cshake::xof_256(INTERMEDIATE_XOF_SIZE, data);
-	$default: unreachable();
-	$endswitch
-}
+macro char[*] apply_simple_cshake(char[] data) => cshake::xof(SECURITY_LEVEL, INTERMEDIATE_XOF_SIZE, data);
 
 struct ParallelHashContext
 {
-	inline $typefrom(cshake::cshake(SECURITY_LEVEL)) c;
+	inline CShake{SECURITY_LEVEL} c;
 	bool is_xof_mode;
 	bool is_padded;
 	usz block_size;
@@ -53,6 +46,7 @@ struct WorkerThreadContext @local
 	ParallelHashContext* context;
 	Allocator* allocator;
 	usz consume_len;
+    usz blocks;
 	usz xof_count;
 	char[] data;
 	char[] out;
@@ -144,15 +138,13 @@ fn void ParallelHashContext.update(&self, Allocator allocator, char[] data, bool
 	// round-robin distribute each thread block off the data length
 	//   if at any point the length is below the block size, punt it to thread 0
 	usz remainder = data.len;
-	for (usz i = 0, usz length = 0; length < data.len; length += self.block_size, ++i)
+	for (usz i = 0; remainder >= self.block_size; i++, remainder -= self.block_size)
 	{
-		// if ((remainder = data.len - length) < self.block_size) break;
-io::printfn("LEN %d // Length %d", data.len, length);
+io::printfn("Add block to context #%d", i % self.thread_count);
 		contexts[i % self.thread_count].consume_len += self.block_size;
-		remainder = data.len - length;
 	}
 io::printfn("REM %d", remainder);
-	// contexts[0].consume_len += remainder;
+	contexts[0].consume_len += remainder;
 
 	// start each worker. threads work TOP-DOWN, meaning the workers[self.thread_count - 1] thread is handling the
 	//   START of the incoming data and thread 0 is handling the tail end of it (as well as handling uneven inputs)
@@ -160,6 +152,7 @@ io::printfn("REM %d", remainder);
 	for (usz i = self.thread_count; i > 0; --i)
 	{
 		usz to_consume = contexts[i - 1].consume_len;
+io::printfn("DATA_OFFSET %d // TO_CONSUME %d", data_offset, to_consume);
 		char[] passed_data = data[data_offset:to_consume];
 // foreach (c : passed_data) io::eprintf("%02x", c); io::eprintn("");
 
@@ -173,6 +166,7 @@ io::eprintfn("BLOCKS %d", blocks);
 			.context = self,
 			.allocator = &allocator,
 			// .consume_len = 0,   DO NOT SET THIS HERE, IT WAS SET ABOVE
+            .blocks = blocks,
 			.xof_count = 0,
 			.data = passed_data,
 			.out = allocator::new_array(allocator, char, INTERMEDIATE_XOF_SIZE * blocks),
@@ -188,11 +182,11 @@ io::eprintfn("NEW CONTEXT: id %d, %d bytes, %d clen, %d blocks", contexts[i-1].t
 
 	foreach_r (w : workers) w.join()!!;   // await all workers
 
-	foreach_r (i, &t : contexts[:self.thread_count])
+	foreach_r (&t : contexts[:self.thread_count])
 	{
 // foreach (c : t.out) io::eprintf("%02x", c); io::eprintn("");
 		// fold all produced XOF chains into the main context's XOF chain
-		self.c.update(t.out);
+        for (usz i = 0; i < t.blocks; i++) self.c.update(t.out[i * INTERMEDIATE_XOF_SIZE  : INTERMEDIATE_XOF_SIZE]);
 	}
 
 	if (@unlikely(remainder > 0))
@@ -270,10 +264,10 @@ macro void ParallelHashContext.squeeze(&self, char[] out)
 }
 
 
-// Names for the KMAC structures are a bit 
+// Names for the KMAC structures are a bit
 module std::hash::sha3::parallel_hash @if(env::NATIVE_THREADING);
 
-import std::io;   // REMOVE ME REMOVE ME REMOVE ME REMOVE ME REMOVE ME REMOVE ME REMOVE ME REMOVE ME 
+import std::io;   // REMOVE ME REMOVE ME REMOVE ME REMOVE ME REMOVE ME REMOVE ME REMOVE ME REMOVE ME
 
 import std::hash::sha3::parallel_hash_internal @public;
 

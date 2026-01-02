@@ -78,10 +78,10 @@ def get_xofs(levels, trim_lengths, customization_strings, xof_func):
 	res = dict()
 	for level in levels:
 		res[level] = {
-			# 'empty':	[xof_func(level, i, "", s) for i in trim_lengths for s in customization_strings],
+			'empty':	[xof_func(level, i, "", s) for i in trim_lengths for s in customization_strings],
 			# 'simple':	[xof_func(level, i, j, s) for i in trim_lengths for j in simple for s in customization_strings],
-			# 'slow':		[xof_func(level, i, "".join(['a'] * 100000000), s) for i in trim_lengths for s in customization_strings],
-			'a...':		[xof_func(level, i, "".join(list_of_a[0:(1+j*64)]), s) for j in range(5) for i in trim_lengths for s in customization_strings],
+			# 'slow':		[xof_func(level, i, "".join(['a'] * 1_000_000), s) for i in trim_lengths for s in customization_strings],
+			# 'a...':		[xof_func(level, i, "".join(list_of_a[0:(1+j*64)]), s) for j in range(5) for i in trim_lengths for s in customization_strings],
 		}
 	return res
 
@@ -93,14 +93,14 @@ def kmac(level, key, trim_length, data, custom = None):
 	return xof.hexdigest()
 
 def get_kmacs(levels, trim_lengths, keys, customization_strings, kmac_func):
-	return [kmac_func(l, k, i, j, s)  for j in simple[0:2]  for k in keys for s in customization_strings for l in levels  for i in trim_lengths  ];
+	# return [kmac_func(l, k, i, j, s)  for j in simple[0:2]  for k in keys for s in customization_strings for l in levels  for i in trim_lengths  ];
 
 	res = dict()
 	for level in levels:
 		res[level] = {
 			# 'empty':	[kmac_func(level, k, i, "", s) for i in trim_lengths for k in keys for s in customization_strings],
-			'simple':	[kmac_func(level, k, i, j, s) for j in simple[0:2] for i in trim_lengths for k in keys for s in customization_strings ],
-			# 'slow':		[kmac_func(level, k, i, "".join(['a'] * 100000000), s) for i in trim_lengths for k in keys for s in customization_strings],
+			# 'simple':	[kmac_func(level, k, i, j, s) for j in simple[0:2] for i in trim_lengths for k in keys for s in customization_strings ],
+			'slow':		[kmac_func(level, k, i, "".join(['a'] * 1_000_000), s) for i in trim_lengths for k in keys for s in customization_strings],
 			# 'a...':		[kmac_func(level, k, i, "".join(list_of_a[0:(1+j*64)]), s) for j in range(5) for i in trim_lengths for k in keys for s in customization_strings],
 		}
 	return res
@@ -109,11 +109,11 @@ def get_kmacs(levels, trim_lengths, keys, customization_strings, kmac_func):
 def main():
 	res = {
 		# 'KECCAK':		get_digests([224, 256, 384, 512], keccak_digest),
-		'SHA3':			get_digests([224, 256, 384, 512], sha3_digest),
+		#'SHA3':			get_digests([224, 256, 384, 512], sha3_digest),
 		# 'SHAKE':		get_xofs([128, 256], [16, 256], [''], shake_xof),
-		# 'TURBO-SHAKE':	get_xofs([128, 256], [16, 256], [''], turboshake_xof),
-		# 'CSHAKE':		get_xofs([128, 256], [64], sample_custom_strs, cshake_xof),
-		# 'KMAC':			get_kmacs([128, 256], [32, 64, 128], sample_kmac_keys, sample_custom_strs, kmac),
+		#  'TURBO-SHAKE':	get_xofs([128, 256], [16, 256], [''], turboshake_xof),
+		# 'CSHAKE':		get_xofs([128, 256], [16, 256], sample_custom_strs, cshake_xof),
+		'KMAC':			get_kmacs([128, 256], [32, 64, 128], sample_kmac_keys, sample_custom_strs, kmac),
 	}
 	pprint.pprint(res)
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Zack Puhl <github@xmit.xyz>. All rights reserved.
+// Copyright (c) 2025-2026 Zack Puhl <github@xmit.xyz>. All rights reserved.
 // Use of this source code is governed by the MIT license
 // a copy of which can be found in the LICENSE_STDLIB file.
 module sha3::cshake_tests @test;
@@ -12,20 +12,20 @@ import std::hash::sha3::cshake;
 //
 //  "internalProjection.json" files.
 //
-fn void cshake_known_vectors() => @pool()
+fn void cshake_known_vectors()
 {
-	/* tcId  5 */ test::eq(x"2eef41bd1680c16f36ae2b9c004805f7426ac9d4bb6bf7cfc78606a6e6f6f518eb6c0be7", cshake::xof_128(36, x"ea18", "fmkctMwhBB[<Kta&RJ5r5ToA9N9~Y-,kin8y]xB}kviaDk_kPI^{o#N1|JIF5x.67pR]]fGX)6'=j.{MnLN1M0zf@'|3OzirhSJS9#.i#&rXz1FnM{WgI|g'tk=Ui5*-L4T6cH4k?d.H<Bk/`.dRC#HklD_LeV~mz"));
-	/* tcId 69 */ test::eq(x"799964e28f9a75f9c7e87c0842790ce03fe7743347fceddf1245ab913fa9a45cac8c1ac74af58b8dd3c0f7", cshake::xof_128(43, x"643d5d", "9[4gjE(d=h}TRAp@m1% -|+zH7caKBkA7L3 K6=]=vP(D(Q3yOdK&vC<Q8?SbE9z{[=&/psWsGc5L#UAdOgz]@<@)vM3vhyv]T,hiL%)Z,V^4.nNb}"));
-	/* tcId 99 */ test::eq(x"8d6126c9e9cfe6acd2ce1e96a126038e1a7540e2f491d7e929d532480d961d800112307a09de39", cshake::xof_128(39, x"9d27db91871324c9d982419353a1b05ad4df57cdd074cf6eaa98063d63f71209ea", "D]uJi])MJ57z3e#h~b0#]wJekj^Em2f2>1#r`k/i%EH"));
+	/* tcId  5 */ test::@check(x"2eef41bd1680c16f36ae2b9c004805f7426ac9d4bb6bf7cfc78606a6e6f6f518eb6c0be7" == cshake::xof(128, 36, x"ea18", "fmkctMwhBB[<Kta&RJ5r5ToA9N9~Y-,kin8y]xB}kviaDk_kPI^{o#N1|JIF5x.67pR]]fGX)6'=j.{MnLN1M0zf@'|3OzirhSJS9#.i#&rXz1FnM{WgI|g'tk=Ui5*-L4T6cH4k?d.H<Bk/`.dRC#HklD_LeV~mz"));
+	/* tcId 69 */ test::@check(x"799964e28f9a75f9c7e87c0842790ce03fe7743347fceddf1245ab913fa9a45cac8c1ac74af58b8dd3c0f7" == cshake::xof(128, 43, x"643d5d", "9[4gjE(d=h}TRAp@m1% -|+zH7caKBkA7L3 K6=]=vP(D(Q3yOdK&vC<Q8?SbE9z{[=&/psWsGc5L#UAdOgz]@<@)vM3vhyv]T,hiL%)Z,V^4.nNb}"));
+	/* tcId 99 */ test::@check(x"8d6126c9e9cfe6acd2ce1e96a126038e1a7540e2f491d7e929d532480d961d800112307a09de39" == cshake::xof(128, 39, x"9d27db91871324c9d982419353a1b05ad4df57cdd074cf6eaa98063d63f71209ea", "D]uJi])MJ57z3e#h~b0#]wJekj^Em2f2>1#r`k/i%EH"));
 
-	/* tcId  4 */ test::eq(x"e366bf084cf54999be6f1b30c928cb116892cdabc66f212865df60947521038ab2ef29e20c65eeb9f673e1", cshake::xof_256(43, "", "mr9dI%/rYePRx1ANU3uD7GpLM7,Ell%><H~dRw*v+w,e`[_aed*Rm8iF#l63wh'l`37P1]{])}9>;,kqVI`(cPO$^Xaebv~Bq>%MD/P(hKIo}K+u D[N)}*/b3qWz6z2~"));
-	/* tcId 54 */ test::eq(x"95c357e292d2220f44bca02d48a1a9f83e47a1a895ed55c0860a97bb62a2f2c363", cshake::xof_256(33, x"97ca560bc7a3dc8219b725797a581dd7c28b15ecd39d330785feb4b1228423fb98011ea41c5416da989720d622323d53be1c50f35b92beb56e7260dd7e751a3a8e47", "cv5E7 W~^WC1!ZJ; MAmo1'{`j6X/]2O"));
-	/* tcId 84 */ test::eq(x"6a43d4816ff231a8a0843622e8612bef824e844a7995d8aeb061767a54dd41de07", cshake::xof_256(33, x"7f9f1976b2a2d73ac24ebd2c53caa533a35b67b60c4f89b35df136577f77e5ef85b5b221e3b63e9fec5a9938eb8a1e28771a7be167354d31c0fc2cf041c4955c87a9b7", "3imMVe>MTz`|O 5mrZ}fQX%8E`IKM9b@(lTs?AQO/<#KkQ8p!7=]YkwXdT)u;q <8?"));
+	/* tcId  4 */ test::@check(x"e366bf084cf54999be6f1b30c928cb116892cdabc66f212865df60947521038ab2ef29e20c65eeb9f673e1" == cshake::xof(256, 43, "", "mr9dI%/rYePRx1ANU3uD7GpLM7,Ell%><H~dRw*v+w,e`[_aed*Rm8iF#l63wh'l`37P1]{])}9>;,kqVI`(cPO$^Xaebv~Bq>%MD/P(hKIo}K+u D[N)}*/b3qWz6z2~"));
+	/* tcId 54 */ test::@check(x"95c357e292d2220f44bca02d48a1a9f83e47a1a895ed55c0860a97bb62a2f2c363" == cshake::xof(256, 33, x"97ca560bc7a3dc8219b725797a581dd7c28b15ecd39d330785feb4b1228423fb98011ea41c5416da989720d622323d53be1c50f35b92beb56e7260dd7e751a3a8e47", "cv5E7 W~^WC1!ZJ; MAmo1'{`j6X/]2O"));
+	/* tcId 84 */ test::@check(x"6a43d4816ff231a8a0843622e8612bef824e844a7995d8aeb061767a54dd41de07" == cshake::xof(256, 33, x"7f9f1976b2a2d73ac24ebd2c53caa533a35b67b60c4f89b35df136577f77e5ef85b5b221e3b63e9fec5a9938eb8a1e28771a7be167354d31c0fc2cf041c4955c87a9b7", "3imMVe>MTz`|O 5mrZ}fQX%8E`IKM9b@(lTs?AQO/<#KkQ8p!7=]YkwXdT)u;q <8?"));
 }
 
 fn void cshake_empty()
 {
-	String[][] expected = {
+	static String[][] expected = {
 		{
 			x"7f9c2ba4e88f827d616045507605853ed73b8093f6efbc88eb1a6eacfa66ef263cb1eea988004b93103cfb0aeefd2a686e01fa4a58e8a3639ca8a1e3f9ae57e235b8cc873c23dc62b8d260169afa2f75ab916a58d974918835d25e6a435085b2badfd6dfaac359a5efbb7bcc4b59d538df9a04302e10c8bc1cbf1a0b3a5120ea17cda7cfad765f5623474d368ccca8af0007cd9f5e4c849f167a580b14aabdefaee7eef47cb0fca9767be1fda69419dfb927e9df07348b196691abaeb580b32def58538b8d23f87732ea63b02b4fa0f4873360e2841928cd60dd4cee8cc0d4c922a96188d032675c8ac850933c7aff1533b94c834adbb69c6115bad4692d8619",
 			x"7f349b68ef1f45d3767c5f20821f43943655f89a88dd33429ba62e72cdcccf5dcb06755d52836b280be15d4f4a33f81d0913bd7dc7f7d90eeb88ca0e8701e891bc1965098679b0866837414500ddf0a6771b733b647e50993210d071a2ec9248513b0e58ca97ada6e755466ea5737c37c537cabda839472dd2dd1539d658c5c5ec6e998d8d3e38a8283dd705dc938bfe46f8f048628ed1c33587801b2dc8a35ff5847411c8fff1b5c5cd595b03a3c39e16732bfe07cb527ff42ea2c33394212d36611c3be792259acbabf8a9cd30de9fd6e003475669468dd08cc37c07b5339db6ac06855371646b306b2159f5e41fd4669a07387e98871bebbaa0e1f6cad804",
@@ -37,19 +37,21 @@ fn void cshake_empty()
 			x"6e9ab01895bcf881ad5930bf8c15a0e5b79f10e6177b981f42c09c9ad0b26d20c82f7cbffb01833e51774e3dade3c22602985717506c7ba2a98c4aa305014c2255749b000aa14df3903ffd2f1d72c3be7f0bb6549a1fec4f992f4eaaa56dda7f3ac6fc7320bd37b2837578bbafcea7fca2ae20dfffdeb4e61dce20b30c0e23f0eb9b2abded87378037968bd269550b523a2bb82a97544719feac3574ca1ea5406f51496f168ffc20f855e9a937878c7386f836ca2b889e56f5fa530fe2a7cc444ee165a34295439e44ffddf690b6637f977b608e02e7eef0933ce6f06bcbbdec933dcd7b69092c7787e8480606bb647bc3e5d747843f9133a3cb5ee90c53ee2a",
 		}
 	};
+	$foreach $j, $c : tests_common::CUSTOMIZATION_STRINGS:
+		test::@check(cshake::xof(128, 256, "", $c)[..] == expected[0][$j]);
+		test::@check(cshake::xof(256, 256, "", $c)[..] == expected[1][$j]);
+	$endforeach
 
-	test::eq(cshake::xof_128(256, "", tests_common::CUSTOMIZATION_STRINGS[0])[..], expected[0][0][..]);
-	test::eq(cshake::xof_128(256, "", tests_common::CUSTOMIZATION_STRINGS[1])[..], expected[0][1][..]);
-	test::eq(cshake::xof_128(256, "", tests_common::CUSTOMIZATION_STRINGS[2])[..], expected[0][2][..]);
-
-	test::eq(cshake::xof_256(256, "", tests_common::CUSTOMIZATION_STRINGS[0])[..], expected[1][0][..]);
-	test::eq(cshake::xof_256(256, "", tests_common::CUSTOMIZATION_STRINGS[1])[..], expected[1][1][..]);
-	test::eq(cshake::xof_256(256, "", tests_common::CUSTOMIZATION_STRINGS[2])[..], expected[1][2][..]);
+	// One final test on an empty customization string, but with a "streamed" context.
+	//   Non-empty customization strings are used in a separate test.
+	static char[256] result;
+	CShake{128} c1 @noinit; c1.init(NONE, ""); c1.update(""); c1.final(result[..]); test::@check(result[..] == expected[0][0]);
+	CShake{256} c2 @noinit; c2.init(NONE, ""); c2.update(""); c2.final(result[..]); test::@check(result[..] == expected[1][0]);
 }
 
 fn void cshake_simple()
 {
-	String[][] expected = {
+	static String[][] expected = {
 		{
 			x"d6b9bdbda14c3858c36d5af417fd083bfc8b19b0bf535831a09a057d9b6e6e423b0b04230cd9427a652bbd85d28e72eb176a3fa9d0348da2d823a9befa9ef95c", // c128
 			x"de46e887727353da377b63ed4e7b4725d1819442ae7284f691d413e81de03e2acc55c6e73d857e5396b3df15def4c904ae57010a568068568175c40aaece6c68", // c256
@@ -96,8 +98,8 @@ fn void cshake_simple()
 	{
 		foreach (j, w : tests_common::CUSTOMIZATION_STRINGS)
 		{
-			test::@check(cshake::xof_128(64, v, w)[..] == expected[i][(j*2) + 0], `128(64): Failed on vector "%s (c: "%s")".`, v, w);
-			test::@check(cshake::xof_256(64, v, w)[..] == expected[i][(j*2) + 1], `256(64): Failed on vector "%s (c: "%s")".`, v, w);
+			test::@check(cshake::xof(128, 64, v, w)[..] == expected[i][(j*2) + 0], `128(64): Failed on vector "%s" (c: "%s").`, v, w);
+			test::@check(cshake::xof(256, 64, v, w)[..] == expected[i][(j*2) + 1], `256(64): Failed on vector "%s" (c: "%s").`, v, w);
 		}
 	}
 }
@@ -154,8 +156,8 @@ fn void cshake_interval()
 	{
 		foreach (k, w : tests_common::CUSTOMIZATION_STRINGS)
 		{
-			test::@check(cshake::xof_128(64, x[:i], w)[..]  == expected[j][(k*2) + 0], "128(16): Failed on length %d.", i);
-			test::@check(cshake::xof_256(64, x[:i], w)[..]  == expected[j][(k*2) + 1], "256(16): Failed on length %d.", i);
+			test::@check(cshake::xof(128, 64, x[:i], w)[..]  == expected[j][(k*2) + 0], "128(16): Failed on length %d.", i);
+			test::@check(cshake::xof(256, 64, x[:i], w)[..]  == expected[j][(k*2) + 1], "256(16): Failed on length %d.", i);
 		}
 	}
 }
@@ -164,15 +166,15 @@ fn void cshake_streamed()
 {
 	String s = tests_common::STREAM_VECTOR;
 
-	CShake128 s1; s1.init(NONE, tests_common::CUSTOMIZATION_STRINGS[2]);
-	CShake128 s2; s2.init(NONE, tests_common::CUSTOMIZATION_STRINGS[2]);
-	CShake256 s3; s3.init(NONE, tests_common::CUSTOMIZATION_STRINGS[2]);
-	CShake256 s4; s4.init(NONE, tests_common::CUSTOMIZATION_STRINGS[2]);
+	CShake{128} s1; s1.init(NONE, tests_common::CUSTOMIZATION_STRINGS[2]);
+	CShake{128} s2; s2.init(NONE, tests_common::CUSTOMIZATION_STRINGS[2]);
+	CShake{256} s3; s3.init(NONE, tests_common::CUSTOMIZATION_STRINGS[2]);
+	CShake{256} s4; s4.init(NONE, tests_common::CUSTOMIZATION_STRINGS[2]);
 
-	s1.update(s[:20]); s1.update(s[20:10]); s1.update(s[30:1]); s1.update(s[31..]); 
-	s2.update(s[:20]); s2.update(s[20:10]); s2.update(s[30:1]); s2.update(s[31..]); 
-	s3.update(s[:20]); s3.update(s[20:10]); s3.update(s[30:1]); s3.update(s[31..]); 
-	s4.update(s[:20]); s4.update(s[20:10]); s4.update(s[30:1]); s4.update(s[31..]); 
+	s1.update(s[:20]); s1.update(s[20:10]); s1.update(s[30:1]); s1.update(s[31..]);
+	s2.update(s[:20]); s2.update(s[20:10]); s2.update(s[30:1]); s2.update(s[31..]);
+	s3.update(s[:20]); s3.update(s[20:10]); s3.update(s[30:1]); s3.update(s[31..]);
+	s4.update(s[:20]); s4.update(s[20:10]); s4.update(s[30:1]); s4.update(s[31..]);
 
 	char[16]  s1_hash; s1.final(s1_hash[..]);
 	char[256] s2_hash; s2.final(s2_hash[..]);
@@ -185,50 +187,48 @@ fn void cshake_streamed()
 	test::eq(s4_hash, x"596fecda6eba0e003f959de0987c1675427319230b60528000ed0802c8ecf6896cc799c6188c98e718716f7756f0dbddbd451661ff48d54e93f41f926098aff433840a300867232829366fd2547e7875cf933f9dadb2632af1dd408b347fa3dd5f499a9e5c16fc8e413bc3b30ff547c6cb787cb293f46507b8822a6bb51e312e9d8265a98b8b00a8178a371739b3c5f1b0a582651f1bd9d27faa7517ca0eda2cfaf05103c8186a299d2a344ac844e1f94648a8859f7d6363f71ddd5eb7f6ede6831f2edd17ec23f8311caad8afa0528a0dc37425f6b91e53b70c73943c6740af5930a73389ec96b439516f5c539069a7a981d5224b8464ddbb8cf7923fd36dc9");
 }
 
-fn void cshake_large() @if($feature(SLOW_TESTS)) => @pool()
+fn void cshake_large() @if ($feature(SLOW_TESTS))
 {
-	char[] bigboi = tests_common::get_bigboi();
-
-	String[][] expected = {
+	static String[][] expected = {
 		{
-			x"aef27c3b0052b04aa5867b79b9881e47",
-			x"aef27c3b0052b04aa5867b79b9881e47f0ffe184abcbb843c636f031f2d7e63301b8d6e202a314ccf3d63c32052a33a7ef32af09ab0cb71728d195b0619aa17cdbd6781b8c06e427fc2afca270dee4dd66a8fbe55b7caa9428298bb655a4edf53096b67b1f057d07c405f02faa3bb0b4f58675a22d238087f469014518651ccb76dcd1f18e44cee2564b00f02fcad7a4a2e80652c43491e77d5df024efd1dd59c2e526634badca60c8bb6cc9c3ca6551678d110d2bfc71b8a5ffdc9ea57f9f33c3ab399522dabed1f509973025b45114d6fde41d924ddcf6ceade024eaa50f4e1876dd875c92089f434629b6cc93599fdb3ba67991992968ed0f05bb19ab9c34",
-			x"a4536e22c2ee63b1c1ea98a1079624fe",
-			x"a4536e22c2ee63b1c1ea98a1079624fe1a6b059d1d0030e8592dd5e152bf3c24259459081044dea2b9485eb4bcf732410f1cbf4c0c8af4c32abd430f1bf63e27aedbb1ddafa03cb8234f5fa2c110e3a60d476a62664c2fc70db094879cd2d9029c9dafde3652afe8c0cd94d3bebffea91fef0af63cbac6bfae44d23ec78bb1630387dce54745f8ab7f6cbb39edfc5cb518dd4b991a3e09b820db3cd592b2e8a9ee22011110330292a582f4271a75b9c2d3632a45d46c3c83b528558d90a0c030cade3e8c7371780ad3cd612d2847867947188ef669ad45c87c35b448a5f3d09497cbc4f6bd91ada1cea2a1d6dbf5f40d41e33627e87e08ccf59a7debc5a0a57f",
+			x"9d222c79c4ff9d092cf6ca86143aa411",
+			x"9d222c79c4ff9d092cf6ca86143aa411e369973808ef97093255826c5572ef58424c4b5c28475ffdcf981663867fec6321c1262e387bccf8ca676884c4a9d0c13bfa6869763d5ae4bbc9b3ccd09d1ca5ea7446538d69b3fb98c72b59a2b4817db5eadd9011f90fa71091931f8134f4f00b562e2fe105937270361c1909862ad45046e3932f5dd311ec72fec5f8fb8f60b45a3bee3f85bbf7fcedc6a555677648e0654b381941a86bd3e512657b0d57a7991fc4543f89d8290492222ce4a33e17602b3b99c009f7655f87535cdaa3716f58c47b8a157ad195f02809f27500b9254979311c6bb415968cd10431169a27d5a8d61e13a6b8b77af1f8b6dd2eefdea0",
+			x"3578a7a4ca9137569cdf76ed617d31bb",
+			x"3578a7a4ca9137569cdf76ed617d31bb994fca9c1bbf8b184013de8234dfd13a3fd124d4df76c0a539ee7dd2f6e1ec346124c815d9410e145eb561bcd97b18ab6ce8d5553e0eab3d1f7dfb8f9deefe16847e2192f6f61fb82fb90dde60b19063c56a4c55cdd7b672b75bf515adbfe204903c8c0036de54a2999a920de90f66d7ff6ec8e4c93d24ae346fdcb3a5a5bd5739ec15a6eddb5ce5b02da53039fac63e19555faa2eddc693b1f0c2a6fcbe7c0a0a091d0ee700d7322e4b0ff09590de166422f9ead5da4c993d605fe4d9c634843aa178b17672c6568c8a2e62abebea2c21c302bd366ad698959e1f6e434af155568b2734d8379fcd3ffe6489baffa6d7",
 		},
 		{
-			x"37c608cecb44ebd4fee98119ff19c49e",
-			x"37c608cecb44ebd4fee98119ff19c49ed414c6c09aea916e45822a51ee800e1e84827427c6f241d02aeecda4c73af073e7fbabfbeabe61cae88a9f88f302941655d02d3f84dc7616602a6e446fa4fd3703f319f85e74d29b37c5ea46d82ce5a920c1efd4936a1c78ac99bd5d0827804cb0240aabeee980f86df9da02b326b3001dfc9c7e7704374e6e5cfc55dec45c9f8f43f00d585dacd8a877531554ad38c1ed7bcc6616da58beb14e9b78c171d1a3fad23737cbd4ab5092f466f7a61bf8aeb97de203c2e015691e3d73eb972c1423169813bac709d7bc2ce04d0b4e5a84802614e50bd04547231a4ee3235b08b2e9e2d9f086c14b47dda1ae85831a1be1a0",
-			x"b92415641c3556a2d19fb4f7ab51977f",
-			x"b92415641c3556a2d19fb4f7ab51977fb4b49c061b2a91fbee55c5a9ed1eede0bbb84c4a79b8c59dbdcd9e33fbee26a50812140937621dd0669fb128d8432ec80a23801cda5ae2e455c15e86e9e52e24feb0a98051923dc093cf6561dc426dc73460c27f50813d22e48ad1650618a7c546aa1e5a28b6e0d0536c89cd820e7bc247721d3bc8178e95b275cb6a7ccfcbeddf29ad366b67dfb5276b5408c0be8bbe84f99e49d86be7c0e06d199f2a8aa01d83ba13fe7fbc05e3107f85a77b0516ce013a13bac50b84d94ab1c4a5ff3ce79e6136de2a25ab111b17b58d732e919b387b1fe69772aa954a9d9e3aeb999a112319ac21f6e349f7162a62643a4836b815",
+			x"6935e13efa6c4f6987d2ec623252fd39",
+			x"6935e13efa6c4f6987d2ec623252fd39a728b589f63e2e2b3840e108f811fecfaffe0bb8119fb86690fe978d70d7e8ab9bd5842edc0d2caf4d6aa0c7d068effce209219a014d61215d92065b1eb4e4e231ab4738cdda9e3d60c107dc235fca1838cd669daee91c68e803854d067f8336127f5fea7b35fcc8134296db949a68bcce4f8420ca168b0ec4bee081b878150a9bb023d872eadcc9629d72faa17287c4265f2dc5eb7755f08a2de152e25d52277328d4ca675f04297976738eb2fafbef847493d8e5f92d58b2df2fd4bd534b33e988f4c95e608ff8d059c3587ad60340990ed99db3a98eb4a826d9ba495289f976b8a5dc00bee5ff6715b304b81f3222",
+			x"a4ce0ec0ec97ded6996a46a7f244fdf4",
+			x"a4ce0ec0ec97ded6996a46a7f244fdf4efd831c47d17a3ca47c788dc6a084bd7b204554f8681172514173ff091b7bee517bef7b9b290bae072a62c5094d210fd1a80e126789d2e5eff1851af7b52eaef2359147a6cfcc598cbc9e381488930ed2fb27b649d52db1a6ce805c415aea772dd132c1058fc5fff241c6f8fe002b269c234b616c21431b0556645f79dfa000fdf5eec2d0b3032ad7134365e1a127e806050f4d140bb1c50d0591d110b41a5ebfa451c11c2b5300a2d91d7590a5ff135425c720af091da0579f64ca9fa0119289a8dbef435c5455598c57776f2b9a80ab45007c28dd5220e79a38de4b0ade06d1ff86f883a3ac7ef433e116b7257e069",
 		},
 		{
-			x"870802b33639cd919e27b56bf1a25994",
-			x"870802b33639cd919e27b56bf1a2599439d5bad51db7ea42f6dca8873dc7ad3ca33771a10e51db14b564608ba7bb2fc02cf1851f0620a20b7640a75ffdcda8a4c317cee8fb778cc3ffddf4cfea768cfdf77e644dfafcd3101f10fa323c47f291d612067fe3e914a4ba9b32a4e2c7bc6974c71bbd807671680194ac065138b410f67d6f00c860b970d1d1d64bfa036c5fe87a59dd3f99403d0f3501e7d3677622fc356806a1b00da742a21ffb88ff9978d3d65672f2ffeebc72d3dcbb1f387338f7bb891601315f8ce89b348e975129d71c89df32be3ea00d228e09f154bd19d07a4658ff9b23b33b6c987d701d5cb1d1bb945fc07edb668f5562523a3065815a",
-			x"2cdfb235357654e2446b4f5005f4a63b",
-			x"2cdfb235357654e2446b4f5005f4a63ba14e0f51fd5caa3cbba5a283cca4cc573c7711f7ae668750ee52030f3941e7565c2a9437d1e9b9fd8b8d157a757db1b459f7b28870df8d501144e42e319053ed47be1f34886a590512160de8733d19fa8da14de6d0090982dbe4f18c7bfffa64940194b0c9a664b8e7eeb1b1cde43bb80304bf48b2dc289381240cb10f9f496579dfa3f995a0ad61def4c6739de0921df216e9a76d012c8110889aed055f2ff8bc54d68bf9e3c7f9ea4362bd5efa33dc46f0fde82ad8fde123d6a8a2bf86c2781547ab724697dfd93b3a48fa85805b9401e63b64569e7f38c680edce0f9988227587cd41c9fea9ee0536a1c0e4a51285",
+			x"225cdb8c42b0fff05bb6f8623020d1ef",
+			x"225cdb8c42b0fff05bb6f8623020d1ef5fd4b4f48a25bbe8e2b0e449fbfbd570b236f073868a3cf051a38938d6418069f2cfc2912fd2584d292a6bfd9392e8781dc7bb17fab4e0f9da558af05ba862c9f9e70a49c91a54670d15f5d049264a427d67b24db28f7ceac2aa68b3ab81e98bd8f380d2fd920f4a3b65ae9ae04e9907e2146b3462b8395e0dcef4570d2179f0ee07aa8999182f6d4bcdbf1ee51a8681296909f8ed14710da02719a268e31262de07e8c2c54b8cb2fad95008220e0633a62ad5a5c40c4fa1c2b531b6058f7c1275ce59c894992553dd91bc3badf1f33cd7f8a1b29ad954a08511b2d0aee901bd6684ce2cfaa94b6c8fe013f398575d16",
+			x"d69e9fab0fe8b6fc7c2bcf56cce5fc08",
+			x"d69e9fab0fe8b6fc7c2bcf56cce5fc083db30767bc12d5ac482f5b4302068f2c1b2fa92327d30abdfec106af333fac39a05e219f7e8a8aa94dd2a7e1d146385a5b2e30caf16de636e616954b227a0e8306782b5f4ef1e001a1e7da4b00705f3d7577a239beb03ea53833bfcb6ff835634f92c5c4dac629e8048a09a6987eb3737a98285ac51d26b966f1966be9aab3fcfa83bde61aa03a5264019d7e9bd845056257b1e73ccd5a6058aa982d0ec5fec7b9ba0325a4a2b4670fa285e83abe2de9c86f92a072e688baa038e71c0c3a5ecfe21457eb52db08952468f1b91595de420a954062ea3c9b20cf9e689c6421cdc83a7096bdbd8cbde5e469c5618b91456b",
 		},
 	};
-
+	char[] bigboi = tests_common::get_bigboi();
 	foreach (i ,v : tests_common::CUSTOMIZATION_STRINGS)
 	{
-		test::eq(cshake::xof_128(16,  bigboi[..], v)[..], expected[i][0]);
-		test::eq(cshake::xof_128(256, bigboi[..], v)[..], expected[i][1]);
-		test::eq(cshake::xof_256(16,  bigboi[..], v)[..], expected[i][2]);
-		test::eq(cshake::xof_256(256, bigboi[..], v)[..], expected[i][3]);
+		test::eq(cshake::xof(128, 16,  bigboi[..], v)[..], expected[i][0]);
+		test::eq(cshake::xof(128, 256, bigboi[..], v)[..], expected[i][1]);
+		test::eq(cshake::xof(256, 16,  bigboi[..], v)[..], expected[i][2]);
+		test::eq(cshake::xof(256, 256, bigboi[..], v)[..], expected[i][3]);
 	}
 }
 
 fn void cshake_successive_xof_operations_128()
 {
-	char[] expected = x"24b35841243321afa4362e8d6cd48acfc5955b1e15e7c8bf8b95d77d30ee1a2f";
+	static char[] expected = x"24b35841243321afa4362e8d6cd48acfc5955b1e15e7c8bf8b95d77d30ee1a2f";
 
-	test::eq(cshake::xof_128(32, "", "beep")[..], expected[..]);
+	test::@check(cshake::xof(128, 32, "", "beep")[..] == expected);
 
 	// Now use the cryptographic XOF functionality to squeeze variable-length data out of SHAKE in .
 	//   We "squeeze" 8 bytes at a time, and the resulting value of the XOF, when concatenated, will match the expected value.
 	char[32] buf;
-	CShake128 k;
+	CShake{128} k;
 	k.init(NONE, "beep");
 	k.update("");
 	k.squeeze(buf[0:8]);
@@ -236,19 +236,19 @@ fn void cshake_successive_xof_operations_128()
 	k.squeeze(buf[16:8]);
 	k.squeeze(buf[24:8]);
 
-	test::eq(buf[..], expected[..]);
+	test::@check(buf[..] == expected);
 }
 
 fn void cshake_successive_xof_operations_256()
 {
-	char[] expected = x"8e4625ac08758e52b27aa43bf630e78271d6e035f075bdfb8ef2677dd5929c3295a62d81cf2e0302d38612bf1f0810059dfc5f";
+	static char[] expected = x"8e4625ac08758e52b27aa43bf630e78271d6e035f075bdfb8ef2677dd5929c3295a62d81cf2e0302d38612bf1f0810059dfc5f";
 
-	test::eq(cshake::xof_256(51, "sugar", "beep")[..], expected[..]);
+	test::@check(cshake::xof(256, 51, "sugar", "beep")[..] == expected);
 
 	// This one shows the even though we squeeze at odd intervals, or beyond the length of the original expected value,
 	//   the prefix will still match.
 	char[128] buf;
-	CShake256 k;
+	CShake{256} k;
 	k.init(NONE, "beep");
 	k.update("sugar");
 	k.squeeze(buf[0:7]);
@@ -260,5 +260,5 @@ fn void cshake_successive_xof_operations_256()
 	k.squeeze(buf[53:10]);
 	k.squeeze(buf[63..]);
 
-	test::eq(buf[:expected.len], expected[..]);
+	test::@check(buf[:expected.len] == expected);
 }

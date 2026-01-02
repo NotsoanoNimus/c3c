@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Zack Puhl <github@xmit.xyz>. All rights reserved.
+// Copyright (c) 2025-2026 Zack Puhl <github@xmit.xyz>. All rights reserved.
 // Use of this source code is governed by the MIT license
 // a copy of which can be found in the LICENSE_STDLIB file.
 module sha3::kmac_tests @test;
@@ -12,14 +12,14 @@ import std::hash::sha3::kmac;
 //
 //  "internalProjection.json" files.
 //
-// fn void kmac_known_vectors() => @pool()
+// fn void kmac_known_vectors()
 // {
 // 	// the ACVP test vectors expect bit-oriented output, and since KMAC is sensitive to all three input lengths, we should skip these tests
 // }
 
 fn void kmac_empty()
 {
-	String[][] expected = {
+	static String[][] expected = {
 		{
 			x"82e15a606364dd5a887245a06357a3d465f2b05c2605d8d32ae3692d3062bcc6",
 			x"fd81c1dd43cf93cf7590dfdc7a65cfc8cb08bce557e109c37279824584af78d97fa76f97583b4d9e27b3e253810f095a2f1152946503c03e5ec68e018dbbcad2",
@@ -45,22 +45,20 @@ fn void kmac_empty()
 			x"2ac55a1c1d837c9a75db0a77c4902d49b62fb8d2fafd852956afc412f6be4fa6f609a9d8b07eca54808e81c5ad48337a276b3c34506a25fced52d0192e6a175bf89f794376feca58769dd5a279dbd214dae10a12868e17c075aa14b4d8344ec178bad90caee667086365696098df971cdfae08053497a47631a0e2cb6b510580",
 		},
 	};
-
 	foreach (j, w : tests_common::CUSTOMIZATION_STRINGS)
 	{
-		test::eq(kmac::hash_128(32,  tests_common::KMAC_KEYS[0], "", w)[..], expected[j][0][..]);
-		test::eq(kmac::hash_128(64,  tests_common::KMAC_KEYS[0], "", w)[..], expected[j][1][..]);
-		test::eq(kmac::hash_128(128, tests_common::KMAC_KEYS[0], "", w)[..], expected[j][2][..]);
-
-		test::eq(kmac::hash_256(32,  tests_common::KMAC_KEYS[0], "", w)[..], expected[j][3][..]);
-		test::eq(kmac::hash_256(64,  tests_common::KMAC_KEYS[0], "", w)[..], expected[j][4][..]);
-		test::eq(kmac::hash_256(128, tests_common::KMAC_KEYS[0], "", w)[..], expected[j][5][..]);
+		test::@check(kmac::hash(128, 32,  tests_common::KMAC_KEYS[0], "", w)[..] == expected[j][0], "Hash mismatch: customization '%s'.", w);
+		test::@check(kmac::hash(128, 64,  tests_common::KMAC_KEYS[0], "", w)[..] == expected[j][1], "Hash mismatch: customization '%s'.", w);
+		test::@check(kmac::hash(128, 128, tests_common::KMAC_KEYS[0], "", w)[..] == expected[j][2], "Hash mismatch: customization '%s'.", w);
+		test::@check(kmac::hash(256, 32,  tests_common::KMAC_KEYS[0], "", w)[..] == expected[j][3], "Hash mismatch: customization '%s'.", w);
+		test::@check(kmac::hash(256, 64,  tests_common::KMAC_KEYS[0], "", w)[..] == expected[j][4], "Hash mismatch: customization '%s'.", w);
+		test::@check(kmac::hash(256, 128, tests_common::KMAC_KEYS[0], "", w)[..] == expected[j][5], "Hash mismatch: customization '%s'.", w);
 	}
 }
 
 fn void kmac_simple()
 {
-	String[][][] expected =
+	static String[][][] expected =
 	{
 		{
 			{ // vec0, key0
@@ -155,20 +153,19 @@ fn void kmac_simple()
 			},
 		}
 	};
-
 	foreach (i, v : tests_common::SIMPLE_VECTORS[:2])   // only check the first 2 vectors
 	{
 		foreach (k, u : tests_common::KMAC_KEYS)
 		{
 			foreach (j, w : tests_common::CUSTOMIZATION_STRINGS)
 			{
-				test::@check(kmac::hash_128(32,  u, v, w)[..] == expected[i][k][(j*6) + 0], `128(32): Failed on vector "%s (c: "%s")".`, v, w);
-				test::@check(kmac::hash_128(64,  u, v, w)[..] == expected[i][k][(j*6) + 1], `128(64): Failed on vector "%s (c: "%s")".`, v, w);
-				test::@check(kmac::hash_128(128, u, v, w)[..] == expected[i][k][(j*6) + 2], `128(128): Failed on vector "%s (c: "%s")".`, v, w);
+				test::@check(kmac::hash(128, 32,  u, v, w)[..] == expected[i][k][(j*6) + 0], `128(32): Failed on vector "%s" (c: "%s").`, v, w);
+				test::@check(kmac::hash(128, 64,  u, v, w)[..] == expected[i][k][(j*6) + 1], `128(64): Failed on vector "%s" (c: "%s").`, v, w);
+				test::@check(kmac::hash(128, 128, u, v, w)[..] == expected[i][k][(j*6) + 2], `128(128): Failed on vector "%s" (c: "%s").`, v, w);
 
-				test::@check(kmac::hash_256(32,  u, v, w)[..] == expected[i][k][(j*6) + 3], `128(32): Failed on vector "%s (c: "%s")".`, v, w);
-				test::@check(kmac::hash_256(64,  u, v, w)[..] == expected[i][k][(j*6) + 4], `128(64): Failed on vector "%s (c: "%s")".`, v, w);
-				test::@check(kmac::hash_256(128, u, v, w)[..] == expected[i][k][(j*6) + 5], `128(128): Failed on vector "%s (c: "%s")".`, v, w);
+				test::@check(kmac::hash(256, 32,  u, v, w)[..] == expected[i][k][(j*6) + 3], `128(32): Failed on vector "%s" (c: "%s").`, v, w);
+				test::@check(kmac::hash(256, 64,  u, v, w)[..] == expected[i][k][(j*6) + 4], `128(64): Failed on vector "%s" (c: "%s").`, v, w);
+				test::@check(kmac::hash(256, 128, u, v, w)[..] == expected[i][k][(j*6) + 5], `128(128): Failed on vector "%s" (c: "%s").`, v, w);
 			}
 		}
 	}
@@ -183,19 +180,19 @@ fn void kmac_streamed()
 {
 	String s = tests_common::STREAM_VECTOR;
 
-	Kmac128 s1; s1.init(tests_common::KMAC_KEYS[0], tests_common::CUSTOMIZATION_STRINGS[2]);
-	Kmac128 s2; s2.init(tests_common::KMAC_KEYS[0], tests_common::CUSTOMIZATION_STRINGS[2]);
-	Kmac128 s3; s3.init(tests_common::KMAC_KEYS[0], tests_common::CUSTOMIZATION_STRINGS[2]);
-	Kmac256 s4; s4.init(tests_common::KMAC_KEYS[0], tests_common::CUSTOMIZATION_STRINGS[2]);
-	Kmac256 s5; s5.init(tests_common::KMAC_KEYS[0], tests_common::CUSTOMIZATION_STRINGS[2]);
-	Kmac256 s6; s6.init(tests_common::KMAC_KEYS[0], tests_common::CUSTOMIZATION_STRINGS[2]);
+	Kmac{128} s1; s1.init(tests_common::KMAC_KEYS[0], tests_common::CUSTOMIZATION_STRINGS[2]);
+	Kmac{128} s2; s2.init(tests_common::KMAC_KEYS[0], tests_common::CUSTOMIZATION_STRINGS[2]);
+	Kmac{128} s3; s3.init(tests_common::KMAC_KEYS[0], tests_common::CUSTOMIZATION_STRINGS[2]);
+	Kmac{256} s4; s4.init(tests_common::KMAC_KEYS[0], tests_common::CUSTOMIZATION_STRINGS[2]);
+	Kmac{256} s5; s5.init(tests_common::KMAC_KEYS[0], tests_common::CUSTOMIZATION_STRINGS[2]);
+	Kmac{256} s6; s6.init(tests_common::KMAC_KEYS[0], tests_common::CUSTOMIZATION_STRINGS[2]);
 
-	s1.update(s[:20]); s1.update(s[20:10]); s1.update(s[30:1]); s1.update(s[31..]); 
-	s2.update(s[:20]); s2.update(s[20:10]); s2.update(s[30:1]); s2.update(s[31..]); 
-	s3.update(s[:20]); s3.update(s[20:10]); s3.update(s[30:1]); s3.update(s[31..]); 
-	s4.update(s[:20]); s4.update(s[20:10]); s4.update(s[30:1]); s4.update(s[31..]); 
-	s5.update(s[:20]); s5.update(s[20:10]); s5.update(s[30:1]); s5.update(s[31..]); 
-	s6.update(s[:20]); s6.update(s[20:10]); s6.update(s[30:1]); s6.update(s[31..]); 
+	s1.update(s[:20]); s1.update(s[20:10]); s1.update(s[30:1]); s1.update(s[31..]);
+	s2.update(s[:20]); s2.update(s[20:10]); s2.update(s[30:1]); s2.update(s[31..]);
+	s3.update(s[:20]); s3.update(s[20:10]); s3.update(s[30:1]); s3.update(s[31..]);
+	s4.update(s[:20]); s4.update(s[20:10]); s4.update(s[30:1]); s4.update(s[31..]);
+	s5.update(s[:20]); s5.update(s[20:10]); s5.update(s[30:1]); s5.update(s[31..]);
+	s6.update(s[:20]); s6.update(s[20:10]); s6.update(s[30:1]); s6.update(s[31..]);
 
 	char[32]  s1_hash; s1.final(s1_hash[..]);
 	char[64]  s2_hash; s2.final(s2_hash[..]);
@@ -212,46 +209,43 @@ fn void kmac_streamed()
 	test::eq(s6_hash, x"0e465ce8ab9a0562e9fab2a0c1f1b429b2d88565d544bc5b7440439104c2f92db8703ca6ad041cd576a718bdc85dd45b16913e9e815bfc741a156c94c9ffd7b61aaed772de53b877000124bf9c667e4d06d6ebf911a55aaaa2f1d84af71280c86bce35a062f25d1c64458b7a94e4a51073651484da4b175c75eb9a23a5b8d92f");
 }
 
-fn void kmac_large() @if($feature(SLOW_TESTS)) => @pool()
+fn void kmac_large() @if ($feature(SLOW_TESTS))
 {
-	char[] bigboi = tests_common::get_bigboi();
-
-	String[][] expected = {
+	static String[][] expected = {
 		{
-			x"cd278efcf3e50d52d61590cf61a850ea9fe18785b51eaa63ce926f57b5168529",
-			x"7311e1044a04be167ca8d4d3b9d24e8196bd4f6001c5e10e8b4d77f96768c00dc6b689719e77bf6499fe737b39068e3b382f202d238e2dad4b278bad6bf44062",
-			x"aebb6f4d76a7dd937278df72db907bd299fa5d47207b999bf992ad861f81eecf76f2cf376abce6cf9e6214e47bd39a7eaa72764d426cc23d978d980638617d694893da6689ab28d79a0e4a37e9df97de36fa4b9bc806796673466364dde185b06c4b70b50d9444a6e66941965f8043a12c777dd4a8e5d958df208619082440f2",
-			x"c1f8a9fa2d9541da679e07c4b6cf0fe48712851bced24130dee8d3cacad1ac48",
-			x"42e3c6763038166b5a6cafc5b31cee26d1b8e8fb7b6a0a716f5eb8a967e1a39c0ee030fa5d8ad4a7ca4e85ba63d11ae6a0f4eb8dc9dfb01ea280a5f661583476",
-			x"bdef904ef49bedeab911c2aed1fb21bbef69d54171f8f6438e2e4b8ceddbd39791051671c22b1b309210739616fbd080e813f2dadcb9d43ec03afeb67cf625df33a14bbb8d08aea2350f765a646ffa66e1df9d8658bd9810efc7988dfedd9d9fd04159f0ba2fb0883bfe365766432a9d06b1e4ce8aaf73ddb5dc998c8fbb7390",
+			x"b615310f5acbcbe28079607458509a248c5ffcf94e194bd502dc31611b490785",
+			x"555c74506cd32f3267d623f3d83adb1a5b107124836b7df61c32ed1f55eb497edd1b292f763a4fa4e3f6147f5fb944a52fa9e4de2064613c657810a654efa363",
+			x"38b1a36fbbcb3a634305eb1dafe104ed66746b06b6a498e5bb2b897d0a9da550b494496407bb2570d34f88d453b10f44b4e91498af815a0a18952418a578b4c8431e83a3e4826bd17d930465b8e04a6985887383596fe3bc15e286d236549cf2a852640553e396b53099a608096d5e01867b0ac480b3d3f0f9dd2910668ca746",
+			x"34e70bc29cc2f2088da42aa842b9a655b68807ea4f5454930c80c4f8578693c3",
+			x"41a63b82bc87d9f26249d15d0159a1c413833cd36ff3de9d329be607326e52e8dc194816d0c74e0f9f684d6f7fed9bfad4ce8cf96fea1ae14737eb73e650a193",
+			x"c43ca982b0fd3f360d2ee9e04dbacef6207995f0f9d2b94e5a7f623b84c7c4dd16b8dc8e6c385093088b5a7636ec0be41907c933749eda23766264133786011ea446bc4699c06ad1fa416ced59d9959e1f03b1e6d9b2dfeccff68b329ce19e82f28ecf4628d7ba2e5ab5ea24bf82289664fdb85826a695ba3d6216eba77c933d",
 		},
 		{
-			x"d38d4a5bc739b16a7ef6890984ae648fa719f983828ac06fc8bdd79cff10335a",
-			x"31e231b3ba205305c7bddaad1cf38695a0001f212fd4aee1d91bcceae3003de860031b35393090ed38f183f62095d9c94c0c5a9596020288de8168652f79ed2a",
-			x"c2922b975b4d8c130313b367ebd9e6ad1c7e7765e00bbf0d2f73ae11ad1bff6e0e6e99102581433d26faa4c17fb57503e3ab9bd2b2326a37ab0885f9690996812d681f240c0e78f808b960341d62efd3858ce32b3e9330377219cdf053198068b0e2511b9f2175f9e4f0289e50433f86f424644b9e7f48c9c700ca2468cc897f",
-			x"24cb7ab9f1430c54640aea0a8d3a453e74d8117ab55531cf8fe75c694713a83a",
-			x"18feba2f5462d12f4a99e554de724b67aa8ff2c47259e349caabe7b31b07dd4bb404ace1d2d705c36c98a289532d202967132583fc92aeb4f903d4f141296faa",
-			x"094a2f753a68ff65e3feaa7d9629d5b8dd612936999fc32adbc7a063690addadbb56131f325f5cf074b10a540893d4021d20f883725275f818258788da49aa5c3ff5e92c026da3c3d4881579b3ed099c7e6c194ba81562327b4647bc6daa1367914d7bd5a9c9bef13c5156e76b2c07adc1c168cf82d048663a30009ec72b46f3",
+			x"188ba676915e51f5b319992c71842c3e9a08a9ab6e590aa7a25b65e8f021b33e",
+			x"89c30693f3bbc59a89e775ad96a59130a67f594a4e71586494f27bc91412d94dd5e8513c905d0cc2e6900f19604c15c37f7983a767bbf62efd2987f74b5d6cf6",
+			x"1c84b7da19469e048de8f692f78ea8815024593953c2136b07ef1f2c5c531d90537c14a1dfacb2da7e2a17ca54d8b0018dad055464df4d71c39487edab75b1dca4c2788096abf602c180c417c98b22d0c4457281e5b37ebf09c3ec643b6001b209d07b5c71d7f4ed2ff279e83a6f1e457da3521d174f3965ac450f8e83448d53",
+			x"f45eca6fbaa67c69525f4fa3473980c0605282b1b0085d20823fb6a4b5a3dd6b",
+			x"0641d54784e1ff39e8fd81d0604725569af63016a0ea36be3622b78160e04793f4132c5545a75872d6644b68075f2afa2dd995cdc98bdd91fd1517cdd097f320",
+			x"fae4a26b4ca748023fa1b6120dd2b0a0f09692b2ed7a6e39eed9ef11e7013af4de34e28890ac33e38bb10abe5db2b956b656bfa16a33f5ebe72c7436d129175112ff285358b5375dbe500fcf87db3723fd797162574302088797b12652e71e6041d655b2d96d49aa4fe27fe8137e75f9164aebc57c03570c8817aaaaa8c15863",
 		},
 		{
-			x"559e065c520baa2340207f7e9346ae9b723ea8aaf1fe1144a68b5d5028b93725",
-			x"c1a17a2bf5adfba34c5d16a6cc3076e31b23d4ae36ffd54a5ffe1e1db65bc227c261feb8ed9e22f4e9d678f5491d385a4c9005c580b3354342e35c2b780aea1b",
-			x"11eb9dfb9746a22f7745a3e2eda713d5cf67f59669e3722f53802b3f61e911e86255f28c5615a33fe36b1f6b767ca9684e10f194f7c0bca03d5458f1ccb6ede6f5b655a826d13d08e2a47f1991ff8d353534d2b4d714e5b8345630a6f67102fd9c13f10a323b9f6f029adbe5c05a93a2790decb3ac59b7e79ad081ba88203097",
-			x"e0e26e9c1f6263ace59cf83f7c5b788128d37a01e37a40785122084d962db73d",
-			x"fb4ab4eb88702cc8cd6c46eb6744446e9273b4c35498359680bc2469c846727862f2a859c01df0e76386ee941106939e58d7eeaa150080fc5502f92911dd9495",
-			x"3665df8e40c99e02b0d86102cc1d981e57771361a0df59b38025239f64d6127d0e43938ddfc37d31db0112d7a57d07d90ee2619f3c95c844aa44f15ca0e2da245a10a2fe509e67d7ed02db08c0b61e7e5c1e78442fe4a101edf3ee3fab2bcb68ae631830e3538bf58185ad2efdc44a60506e990f767b00b00f5cd3b19e1990ce",
+			x"5f03a97ac26f91ebd77cfa4732daf5cd16ea5bf995d9ad32d2cf200498d661fc",
+			x"b37da22e17fed63e954fb2111cb5eb127617e9f3e05ba8e037c932f840ab9b1e2abfd239f3c0882654e2d4cf5e5af7b2cd4e08736d49508422b172cd7537a306",
+			x"64bfecccffc4f8d0b5f0b0cbe0f6537b509742694b14f8446e2cf6d5328c2336b077dd71d060afd23ce5bc46ae983c540b056734b87514db5c784c4dfdc4a1ac15fd9c82b2edc83b3f4fadbb367828a9d8c9916ee88a6fdae304038ff0a5097d7c29f45fbb0e3dd07448044a7be66fe143039317e82cfba105daaf6a7679efa3",
+			x"efb841a5c227b21e92f1400d651d109b7f747b4460b819a9cf46dfaabb5f2abb",
+			x"b4fd04b48f4b6b48757329761ad38d739c49bbddc756724676c15e43dd710e4f424520acd0cbf5598bddcdbb806c41364cd26e9715f4bd78fa369512d3818c2b",
+			x"6ae4d5e3fa66e95385f2581afc5731c11ffc43dcf0d4c7bdcc6e0bc84524f1c4e3841154e8957a45c2f5aa864a25b3fb72a80f911131690cf6a9f0154493fe494ea0ade1f5f2f378fa57017a64cddfa91d7cce56a2ed790acce1d439d93d315de2632cd41affab3e4de69ee7bffda603b4d5c3b7ca3445659fe14647b839e850",
 		},
 	};
-
+	char[] bigboi = tests_common::get_bigboi();
 	foreach (i, v : tests_common::CUSTOMIZATION_STRINGS)
 	{
-		test::eq(kmac::hash_128(32,  tests_common::KMAC_KEYS[1], bigboi[..], v)[..], expected[i][0]);
-		test::eq(kmac::hash_128(64,  tests_common::KMAC_KEYS[1], bigboi[..], v)[..], expected[i][1]);
-		test::eq(kmac::hash_128(128, tests_common::KMAC_KEYS[1], bigboi[..], v)[..], expected[i][2]);
-
-		test::eq(kmac::hash_256(32,  tests_common::KMAC_KEYS[1], bigboi[..], v)[..], expected[i][3]);
-		test::eq(kmac::hash_256(64,  tests_common::KMAC_KEYS[1], bigboi[..], v)[..], expected[i][4]);
-		test::eq(kmac::hash_256(128, tests_common::KMAC_KEYS[1], bigboi[..], v)[..], expected[i][5]);
+		test::@check(kmac::hash(128, 32,  tests_common::KMAC_KEYS[1], bigboi, v)[..] == expected[i][0], "Large hash mismatch, customization '%s'", v);
+		test::@check(kmac::hash(128, 64,  tests_common::KMAC_KEYS[1], bigboi, v)[..] == expected[i][1], "Large hash mismatch, customization '%s'", v);
+		test::@check(kmac::hash(128, 128, tests_common::KMAC_KEYS[1], bigboi, v)[..] == expected[i][2], "Large hash mismatch, customization '%s'", v);
+		test::@check(kmac::hash(256, 32,  tests_common::KMAC_KEYS[1], bigboi, v)[..] == expected[i][3], "Large hash mismatch, customization '%s'", v);
+		test::@check(kmac::hash(256, 64,  tests_common::KMAC_KEYS[1], bigboi, v)[..] == expected[i][4], "Large hash mismatch, customization '%s'", v);
+		test::@check(kmac::hash(256, 128, tests_common::KMAC_KEYS[1], bigboi, v)[..] == expected[i][5], "Large hash mismatch, customization '%s'", v);
 	}
 }
 
@@ -259,12 +253,12 @@ fn void kmac_successive_xof_operations_128()
 {
 	char[] expected = x"38742f2e6a0edf501ba625afed22fb6879d2ec0f10ee9012ac410b9f8bce51a5";
 
-	test::eq(kmac::xof_128(32, tests_common::KMAC_KEYS[1], "i want to be sure this message wasn't tampered with", "!!!!!@@@@@#####$$$$$")[..], expected[..]);
+	test::eq(kmac::xof(128, 32, tests_common::KMAC_KEYS[1], "i want to be sure this message wasn't tampered with", "!!!!!@@@@@#####$$$$$")[..], expected[..]);
 
 	// Now use the cryptographic XOF functionality to squeeze variable-length data out of SHAKE in .
 	//   We "squeeze" 8 bytes at a time, and the resulting value of the XOF, when concatenated, will match the expected value.
 	char[32] buf;
-	KmacXOF128 k;
+	KmacXOF{128} k;
 	k.init(tests_common::KMAC_KEYS[1], "!!!!!@@@@@#####$$$$$");
 	k.update("i want to be sure this message wasn't tampered with");
 	k.squeeze(buf[0:8]);
@@ -279,12 +273,12 @@ fn void kmac_successive_xof_operations_256()
 {
 	char[] expected = x"f0b8525e66f4d3845848f198a57bd615057f66becd1ede603f6110a3f5e91e504d288267907c58f5aeb63d301455c515ab184a";
 
-	test::eq(kmac::xof_256(51, tests_common::KMAC_KEYS[1], "i want to be sure this message wasn't tampered with", "!!!!!@@@@@#####$$$$$")[..], expected[..]);
+	test::eq(kmac::xof(256, 51, tests_common::KMAC_KEYS[1], "i want to be sure this message wasn't tampered with", "!!!!!@@@@@#####$$$$$")[..], expected[..]);
 
 	// This one shows the even though we squeeze at odd intervals, or beyond the length of the original expected value,
 	//   the prefix will still match.
 	char[128] buf;
-	KmacXOF256 k;
+	KmacXOF{256} k;
 	k.init(tests_common::KMAC_KEYS[1], "!!!!!@@@@@#####$$$$$");
 	k.update("i want to be sure this message wasn't tampered with");
 	k.squeeze(buf[0:7]);
@@ -304,7 +298,7 @@ fn void xof_vs_non_xof()
 	// iykyk ;)
 	char[50] buf;
 
-	KmacXOF128 k;
+	KmacXOF{128} k;
 	k.init("A KMAC secret key", "");
 	k.update("hello123");
 
@@ -315,5 +309,5 @@ fn void xof_vs_non_xof()
 	test::eq(buf, x"7b638e178cfdac5727a4ea7694efaa967a65a1d0034501855acff506b4158d187d5a18d668e67b43f2abf61144b20ed4c09f");
 
 	// but this one is different
-	test::eq(kmac::hash_128(32, "A KMAC secret key", "hello123"), x"1fa1c0d761129a83f9a4299ca137674de8373a3cc437799ae4c129e651627f8e");
+	test::eq(kmac::hash(128, 32, "A KMAC secret key", "hello123"), x"1fa1c0d761129a83f9a4299ca137674de8373a3cc437799ae4c129e651627f8e");
 }

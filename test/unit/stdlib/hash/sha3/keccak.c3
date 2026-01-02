@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Zack Puhl <github@xmit.xyz>. All rights reserved.
+// Copyright (c) 2025-2026 Zack Puhl <github@xmit.xyz>. All rights reserved.
 // Use of this source code is governed by the MIT license
 // a copy of which can be found in the LICENSE_STDLIB file.
 module sha3::keccak_tests @test;
@@ -14,15 +14,16 @@ import std::hash::sha3::keccak @public;
 
 fn void keccak_empty()
 {
-	test::eq(keccak::hash_224(""), x"f71837502ba8e10837bdd8d365adb85591895602fc552b48b7390abd");
-	test::eq(keccak::hash_256(""), x"c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
-	test::eq(keccak::hash_384(""), x"2c23146a63a29acf99e73b88f8c24eaa7dc60aa771780ccc006afbfa8fe2479b2dd2b21362337441ac12b515911957ff");
-	test::eq(keccak::hash_512(""), x"0eab42de4c3ceb9235fc91acffe746b29c29a8c366b7c60e4e67c466f36a4304c00fa9caf9d87976ba469bcbe06713b435f091ef2769fb160cdab33d3670680e");
+	// NOTE: 100 out-length is chosen to demonstrate the XOF usability of keccak.
+	test::@check(keccak::hash(224, 100, "")[:28] == x"f71837502ba8e10837bdd8d365adb85591895602fc552b48b7390abd");
+	test::@check(keccak::hash(256, 100, "")[:32] == x"c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
+	test::@check(keccak::hash(384, 100, "")[:48] == x"2c23146a63a29acf99e73b88f8c24eaa7dc60aa771780ccc006afbfa8fe2479b2dd2b21362337441ac12b515911957ff");
+	test::@check(keccak::hash(512, 100, "")[:64] == x"0eab42de4c3ceb9235fc91acffe746b29c29a8c366b7c60e4e67c466f36a4304c00fa9caf9d87976ba469bcbe06713b435f091ef2769fb160cdab33d3670680e");
 }
 
 fn void keccak_simple()
 {
-	String[][] expected = {
+	static String[][] expected = {
 		{
 			x"5c52615361ce4c5469f9d8c90113c7a543a4bf43490782d291cb32d8",
 			x"64e604787cbf194841e7b68d7cd28786f6c9a0a3ab9f8b0a0e87cb4387ab0107",
@@ -54,21 +55,17 @@ fn void keccak_simple()
 			x"93a294f9e80c2d0bf26d0e56d333dce9c0523effb8fdba078ef3a6faaa5481d8b86f0ef79af44b646164e8c9bda01fef01bac3a30f818dae3597b6faacabc78a",
 		},
 	};
-
 	foreach (i, v : tests_common::SIMPLE_VECTORS)
 	{
-		test::eq(keccak::hash_224(v[..])[..], expected[i][0][..]);
-		test::eq(keccak::hash_256(v[..])[..], expected[i][1][..]);
-		test::eq(keccak::hash_384(v[..])[..], expected[i][2][..]);
-		test::eq(keccak::hash_512(v[..])[..], expected[i][3][..]);
+		$foreach $i, $sz : keccak::SECURITY_LEVELS:
+			test::@check(keccak::hash($sz, 100, v[..])[:$sz/8] == expected[i][$i][..]);
+		$endforeach
 	}
 }
 
 fn void keccak_interval()
 {
-	char[257] x = { [0..256] = 'a' };
-
-	String[][] expected = {
+	static String[][] expected = {
 		{
 			x"7cf87d912ee7088d30ec23f8e7100d9319bff090618b439d3fe91308",
 			x"3ac225168df54212a25c1c01fd35bebfea408fdac2e31ddd6f80a4bbf9a5f1cb",
@@ -100,55 +97,48 @@ fn void keccak_interval()
 			x"a7e0a48b9a9344a36531f79cfee05468114e6d3eb5045cc6ac432983ef48ca69ffe05adc7eb4bd196b50972072cc3bf125dc0b45264ff1229e321c92a8e36339",
 		},
 	};
-
+	static char[257] x = { [0..256] = 'a' };
 	// 'a'-array of lengths [1, 65, 129, 193, 257]
 	for (usz i = 1, usz j = 0; i <= 257; i += 64, ++j)
 	{
-		test::@check(keccak::hash_224(x[:i])[..] == expected[j][0], "224: Failed on length %d.", i);
-		test::@check(keccak::hash_256(x[:i])[..] == expected[j][1], "256: Failed on length %d.", i);
-		test::@check(keccak::hash_384(x[:i])[..] == expected[j][2], "384: Failed on length %d.", i);
-		test::@check(keccak::hash_512(x[:i])[..] == expected[j][3], "512: Failed on length %d.", i);
+		$foreach $i, $sz : keccak::SECURITY_LEVELS:
+			test::@check(keccak::hash($sz, 100, x[:i])[:$sz/8] == expected[j][$i]);
+		$endforeach
 	}
 }
 
 fn void keccak_streamed()
 {
-	String s = tests_common::STREAM_VECTOR;
-
-	Keccak224 k1; k1.init();
-	Keccak256 k2; k2.init();
-	Keccak384 k3; k3.init();
-	Keccak512 k4; k4.init();
-
-	k1.update(s[:20]); k1.update(s[20:10]); k1.update(s[30:1]); k1.update(s[31..]);
-	k2.update(s[:20]); k2.update(s[20:10]); k2.update(s[30:1]); k2.update(s[31..]);
-	k3.update(s[:20]); k3.update(s[20:10]); k3.update(s[30:1]); k3.update(s[31..]);
-	k4.update(s[:20]); k4.update(s[20:10]); k4.update(s[30:1]); k4.update(s[31..]);
-
-	char[224/8] k1_hash; k1.final(k1_hash[..]);
-	char[256/8] k2_hash; k2.final(k2_hash[..]);
-	char[384/8] k3_hash; k3.final(k3_hash[..]);
-	char[512/8] k4_hash; k4.final(k4_hash[..]);
-
-	test::eq(k1_hash, x"c1db269e17762c0cb49f90e8c707a5a07bc8ef916a5be614b9025dcd");
-	test::eq(k2_hash, x"1b3448bae1bf51f295092abf1ab79f0691e519cbd4a3cd9c748ed1c766748609");
-	test::eq(k3_hash, x"b36318ba1ed978d9df23f615958967c0b91d35039f02831dee289055f9fe0a4f6aa1118942b073b1b81f43bc4f2fd4a5");
-	test::eq(k4_hash, x"9ab3c2bd4f3d410e717f8f43ce0842ebb432a5d9bb9e669c95728694e25c3cf3e432a99717187c00ecc89a68dc77fd319c17d085bcc21a7a1104ce1c1e309eda");
+	static String[] expected = {
+		x'c1db269e17762c0cb49f90e8c707a5a07bc8ef916a5be614b9025dcd',
+		x'1b3448bae1bf51f295092abf1ab79f0691e519cbd4a3cd9c748ed1c766748609',
+		x'b36318ba1ed978d9df23f615958967c0b91d35039f02831dee289055f9fe0a4f6aa1118942b073b1b81f43bc4f2fd4a5',
+		x'9ab3c2bd4f3d410e717f8f43ce0842ebb432a5d9bb9e669c95728694e25c3cf3e432a99717187c00ecc89a68dc77fd319c17d085bcc21a7a1104ce1c1e309eda',
+	};
+	static String s = tests_common::STREAM_VECTOR;
+	$foreach $i, $sz : keccak::SECURITY_LEVELS:
+	{
+		char[$sz / 8] result;
+		Keccak{$sz} k @noinit;
+		@as_char_view(k)[..] = 0xff;
+		k.init();
+		k.update(s[:20]); k.update(s[20:10]); k.update(s[30:1]); k.update(s[31..]);
+		k.final(result[..]);
+		test::@check(result[..] == expected[$i], "%d: Hash mismatch.", $sz);
+	}
+	$endforeach
 }
 
-fn void keccak_large() @if($feature(SLOW_TESTS)) => @pool()
+fn void keccak_large() @if ($feature(SLOW_TESTS))
 {
-	char[] bigboi = tests_common::get_bigboi();
-
-	String[] expected = {
-		x"ef4f1466a65e18f525b4dc54e796068df4ca492c7383be4ddc7006fb",
-		x"9fde845bffc929156559cadc3cb004f6d859a0bbcb0cb7af89eaacc2f2083d73",
-		x"23b85c2e0c54def6bdd229398f3273fa8785e0173ed57d84234c71a78bc7440d414ade7963273c386c24380c36c2395f",
-		x"0205f85e8582df3925f7bb07ce96929a5816f23b8488de44bb6bd6dec3b5a43cf23128e58afee46151c1a758c611b404e32dca58815d2ed045558adee420f6df",
+	static String[] expected = {
+		x"19f9167be2a04c43abd0ed554788101b9c339031acc8e1468531303f",
+		x"fadae6b49f129bbb812be8407b7b2894f34aecf6dbd1f9b0f0c7e9853098fc96",
+		x"0c8324e1ebc182822c5e2a086cac07c2fe00e3bce61d01ba8ad6b71780e2dec5fb89e5ae90cb593e57bc6258fdd94e17",
+		x"5cf53f2e556be5a624425ede23d0e8b2c7814b4ba0e4e09cbbf3c2fac7056f61e048fc341262875ebc58a5183fea651447124370c1ebf4d6c89bc9a7731063bb",
 	};
-
-	test::eq(keccak::hash_224(bigboi[..])[..], expected[0]);
-	test::eq(keccak::hash_256(bigboi[..])[..], expected[1]);
-	test::eq(keccak::hash_384(bigboi[..])[..], expected[2]);
-	test::eq(keccak::hash_512(bigboi[..])[..], expected[3]);
+	char[] bigboi = tests_common::get_bigboi();
+	$foreach $i, $sz : keccak::SECURITY_LEVELS:
+		test::@check(keccak::hash($sz, $sz / 8, bigboi[..])[..] == expected[$i]);
+	$endforeach
 }

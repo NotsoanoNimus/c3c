@@ -1,8 +1,7 @@
-// Copyright (c) 2025 Zack Puhl <github@xmit.xyz>. All rights reserved.
+// Copyright (c) 2025-2026 Zack Puhl <github@xmit.xyz>. All rights reserved.
 // Use of this source code is governed by the MIT license
 // a copy of which can be found in the LICENSE_STDLIB file.
 module sha3::tests_common;
-
 
 // Should be common to every SHA-3 test module. See 'generator.py'
 const String[] SIMPLE_VECTORS =
@@ -16,7 +15,6 @@ const String[] SIMPLE_VECTORS =
 		" strange or otherworldly syntax, just for the sake of pretentiousness.",
 };
 
-
 const String[] CUSTOMIZATION_STRINGS =
 {
 	"",
@@ -24,13 +22,11 @@ const String[] CUSTOMIZATION_STRINGS =
 	"my customization string that is a bit longer",
 };
 
-
 const String[] KMAC_KEYS =
 {
 	"correct horse battery staple cryptographic brainrot",
 	"RJ5r5ToA9N9~Y-,kin8y]xB}kviaDk_kPI",
 };
-
 
 const String STREAM_VECTOR =
 	"This Standard specifies the Secure Hash Algorithm-3 (SHA-3) family of"
@@ -50,7 +46,6 @@ const String STREAM_VECTOR =
 	" Extendable-output functions are different from hash functions, but it is possible"
 	" to use them in similar ways, with the flexibility to be adapted directly to the"
 	" requirements of individual applications, subject to additional security considerations.";
-
 
 macro get_bigboi()
 {
