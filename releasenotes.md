@@ -47,6 +47,7 @@
 - Miscompilation: global struct with vector could generate an incorrect initializer.
 - `String.tokenize_all` would yield one too many empty tokens at the end.
 - `String.replace` no longer depends on `String.split`.
+- Fix the case where `\u<unicode char>` could crash the compiler on some platforms.
 
 ### Stdlib changes
 - Add `ThreadPool` join function to wait for all threads to finish in the pool without destroying the threads.
@@ -62,6 +63,7 @@
 - Add `ripemd` hashing and associated tests. #2663
 - Add `chacha20` stream cipher and associated tests. #2643
 - Add `BLAKE2` (optionally keyed) cryptographic hashing with associated tests. #2648
+- Add `BLAKE3` XOF and associated tests. #2667
 - Add `Elf32_Shdr` and `Elf64_Shdr` to `std::os::linux`.
 - Add `any.to` and `any.as`.
 - Deprecated `DString.append_chars`, use `DString.append_string`
