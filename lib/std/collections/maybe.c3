@@ -27,8 +27,10 @@ fn Maybe value(Type val)
 {
 	return { .value = val, .has_value = true };
 }
+macro some(Type val) => value(val);
 
 const Maybe EMPTY = { };
+const Maybe NONE = EMPTY;
 
 macro Type? Maybe.get(self)
 {
