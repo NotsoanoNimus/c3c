@@ -8,10 +8,10 @@ import std::collections::maybe;
 faultdef EMPTY_FAULT @local;
 faultdef EXPECTED_VALUE, EXPECTED_ERROR;
 
-alias OkPredicateFn @local @generic(TypeT) = fn bool (TypeT);
+alias OkPredicateFn <TypeT> @local = fn bool (TypeT);
 alias ErrPredicateFn @local = fn bool (fault);
 
-struct Result @generic(TypeT)
+struct Result <TypeT>
 {
 	TypeT value;
 	fault error;
@@ -23,7 +23,7 @@ struct Result @generic(TypeT)
 macro bool Result.eq(&self, other) @operator(==) => (self.is_ok() && self.value == other.value) || (self.is_err() && self.error == other.error);
 
 macro ok(value) @builtin => (Result{$typeof(value)}){ .value = value, .error = EMPTY_FAULT };
-macro err(fault error) @generic(TypeT) @builtin => (Result{TypeT}){ .error = error };
+macro err(fault error) <OfType> @builtin => (Result{OfType}){ .error = error };
 
 macro Maybe{TypeT} Result.ok(&self) => self.is_ok() ? maybe::some{TypeT}(self.value) : maybe::NONE{TypeT};
 macro bool Result.is_ok(&self) => self.error == EMPTY_FAULT;
@@ -36,16 +36,16 @@ macro bool Result.is_err_and(&self, ErrPredicateFn func) => self.is_err() && (fu
 macro TypeT? Result.expect(&self, String message = "", bool panic = true)
 {
 	if (self.is_ok()) return self.value;
-	return panic ? abort(message) : EXPECTED_VALUE?;
+	return panic ? abort(message) : EXPECTED_VALUE~;
 }
 macro fault? Result.expect_err(&self, String message = "", bool panic = true)
 {
 	if (self.is_err()) return self.error;
-	return panic ? abort(message) : EXPECTED_ERROR?;
+	return panic ? abort(message) : EXPECTED_ERROR~;
 }
 
 macro Result.unwrap(&self, bool $panic = true)
-	=> self.ok().get() ?? ($panic ??? abort("Result unwrapped error: %s", self.error) : EXPECTED_VALUE?);
+	=> self.ok().get() ?? ($panic ??? abort("Result unwrapped error: %s", self.error) : EXPECTED_VALUE~);
 macro TypeT Result.unwrap_or(&self, TypeT _default = {}) => self.unwrap($panic: false) ?? _default;
 <*
  @require $typeof(func).returns == TypeT : "The alternative computation function must return a value of the wrapped type."
@@ -53,7 +53,7 @@ macro TypeT Result.unwrap_or(&self, TypeT _default = {}) => self.unwrap($panic: 
 macro TypeT Result.unwrap_or_else(&self, func) => self.unwrap($panic: false) ?? func(self.error);
 
 macro fault Result.unwrap_err(&self, bool $panic = true)
-	=> self.err().get() ?? ($panic ??? abort("Result unwrapped a value when an error was expected.") : EXPECTED_ERROR?);
+	=> self.err().get() ?? ($panic ??? abort("Result unwrapped a value when an error was expected.") : EXPECTED_ERROR~);
 macro fault Result.unwrap_err_or(&self, fault _default) => self.safe_unwrap_err() ?? _default;
 
 macro Result Result.and(self, Result alt) @operator(&) => self.is_err() ? self : alt;
