@@ -23,7 +23,7 @@ macro to_int(x, $n)
 		$case $n <= 4: return (uint)total;
 		$case $n <= 8: return (ulong)total;
 		$case $n <= 16: return total;
-		$default: $error "Invalid 'n' constraint on Algorithm 2 (`to_int`)."
+		$default: $error "Invalid 'n' constraint on Algorithm 2 (`to_int`).";
 	$endswitch
 }
 
@@ -84,7 +84,7 @@ struct SlhDsaParameters
 	usz pubkey_len;
 	usz signature_len;
 }
-const SlhDsaParameters[] PARAMS = {
+const SlhDsaParameters[] PARAMS_SET = {
 	{ 16, 63,  7, 9, 12, 14, 4, 30, 1, 32,  7_856 },   // 128s
 	{ 16, 66, 22, 3,  6, 33, 4, 34, 1, 32, 17_088 },   // 128f
 	{ 24, 63,  7, 9, 14, 17, 4, 39, 3, 48, 16_224 },   // 192s
@@ -95,7 +95,7 @@ const SlhDsaParameters[] PARAMS = {
 
 macro SlhDsaParameters select_params($strength, SlhDsaMode $mode) @const
 {
-	return PARAMS[($strength / 8 - 2) * 2 + $mode.ordinal];
+	return PARAMS_SET[($strength / 8 - 2) * 2 + $mode.ordinal];
 }
 
 constdef SlhDsaAddressType : inline uint
@@ -107,6 +107,11 @@ constdef SlhDsaAddressType : inline uint
 	FORS_ROOTS = 4,
 	WOTS_PRF = 5,
 	FORS_PRF = 6,
+}
+
+struct WotsPlusHashAddress
+{
+	//
 }
 
 struct SlhDsaAddress @align(uint.sizeof) @packed
@@ -180,13 +185,21 @@ struct SlhDsaPrivateKey <N>
 }
 fn bool SlhDsaPrivateKey.eq(&self, SlhDsaPrivateKey{N} other) @operator(==) => member_eq(*self, other);
 
+<* A single object that contains both the public and private keys. *>
+struct SlhDsaKeyPair <N>
+{
+	SlhDsaPublicKey{N} pubkey;
+	SlhDsaPrivateKey{N} privkey;
+}
+fn bool SlhDsaKeyPair.eq(&self, SlhDsaKeyPair{N} other) @operator(==) => member_eq(*self, other);
+
 // TODO: Refactor and remove macros here
 <*
  Algorithm 21.
 
  @require @in(N, 128, 192, 256) : "The `N` size must be set to the appropriate supported key size: 128, 192, or 256."
 *>
-macro Pair{SlhDsaPublicKey{N}, SlhDsaPrivateKey{N}}? keygen(SlhDsaHashType $type = SHAKE, SlhDsaMode $mode = FAST) <N>
+macro SlhDsaKeyPair{N}? keygen(SlhDsaHashType $type = SHAKE, SlhDsaMode $mode = FAST) <N>
 {
 	SlhDsaPrivateKey{N} privkey;
 	SlhDsaPublicKey{N} pubkey;
@@ -221,7 +234,7 @@ macro char[]? sign(Allocator allocator, SlhDsaPrivateKey{N} privkey, char[] mess
 	return res;
 }
 
-enum SlhDsaPreHashType : (BEUint128 oid)
+enum SlhDsaPreHashType : (UInt128BE oid)
 {
 	SHA256    { { 0x0609608648016503040201ull } },
 	SHA512    { { 0x0609608648016503040203ull } },
@@ -269,9 +282,72 @@ macro char[]? hash_sign(Allocator allocator, SlhDsaPrivateKey{N} privkey, char[]
 	message_p[2 : context.len] = context[..];
 	message_p[2 + context.len : 11] = @as_char_view(pre_hash.oid)[^12..];
 	message_p[2 + context.len + 11 ..] = hash[..];
-	$SigType signature = sign_internal{N >> 3, $type, $mode}(hash, privkey, addrnd: addrnd, hedged: hedged);
+	$SigType signature = sign_internal{N >> 3, $type, $mode}(message_p, privkey, addrnd: addrnd, hedged: hedged);
 	res[..] = @as_char_view(signature)[..];
 	return res;
+}
+
+<*
+ NOTE: Per specification requirements, a random number generator with a strength of _at least_ `8N` bits _must_ be used.
+
+ @require @in(N, 16, 24, 32) : "The SLH-DSA 'n' value must be a supported integer length (16, 24, or 32 bytes)."
+ @require $typeof(HASH_TYPE) == SlhDsaHashType : "`HASH_TYPE` must be a valid value from the `SlhDsaHashType` enum."
+ @require $typeof(MODE) == SlhDsaMode : "`MODE` must be a valid value from the `SlhDsaMode` enum."
+*>
+module std::crypto::slh_dsa <N, HASH_TYPE, MODE>;
+
+<*
+ Algorithm 24.
+
+ @require @in(N, 128, 192, 256) : "The `N` size must be set to the appropriate supported key size: 128, 192, or 256."
+ @require context.len <= 255 : "The `context` byte-string has a maximum length of 255 bytes."
+*>
+macro bool verify(char[] message, SlhDsaSignature sig, SlhDsaPublicKey{N} pubkey, char[] context = {}) => @pool()
+{
+	char[] message_p = alloc::alloc_array(tmem, char, 1 + 1 + context.len + message.len);
+	message_p[0] = 0;
+	message_p[1] = context.len;
+	message_p[2 : context.len] = context[..];
+	message_p[2 + context.len ..] = message;
+	return verify_internal(message_p, sig, pubkey);
+}
+
+<*
+ Algorithm 25.
+
+ @require @in(N, 128, 192, 256) : "The `N` size must be set to the appropriate supported key size: 128, 192, or 256."
+ @require context.len <= 255 : "The `context` byte-string has a maximum length of 255 bytes."
+
+ @return? NOT_FOUND : "The pre-hash type is not valid."
+*>
+macro bool hash_verify(char[] message, SlhDsaPreHashType pre_hash, SlhDsaSignature sig,
+	SlhDsaPublicKey{N} pubkey, char[] context = {}) => @pool()
+{
+	char[64] tmp_hash;
+	char[] hash;
+	switch (pre_hash)
+	{
+		case SHA256:
+			tmp_hash[:32] = sha256::hash(message)[..];
+			hash = tmp_hash[:32];
+		case SHA512:
+			tmp_hash[:32] = sha512::hash(message)[..];
+			hash = tmp_hash[:64];
+		case SHAKE128:
+			shake::xof_into(128, tmp_hash[:32], message);
+			hash = tmp_hash[:32];
+		case SHAKE256:
+			shake::xof_into(256, tmp_hash[:64], message);
+			hash = tmp_hash[:64];
+		default: return NOT_FOUND~;
+	}
+	char[] message_p = alloc::alloc_array(tmem, char, 1 + 1 + context.len + 11 + hash.len);
+	message_p[0] = 1;
+	message_p[1] = context.len;
+	message_p[2 : context.len] = context[..];
+	message_p[2 + context.len : 11] = @as_char_view(pre_hash.oid)[^12..];
+	message_p[2 + context.len + 11 ..] = hash[..];
+	return verify_internal(message_p, sig, pubkey);
 }
 
 
