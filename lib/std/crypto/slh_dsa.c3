@@ -280,7 +280,7 @@ macro char[]? hash_sign(Allocator allocator, SlhDsaPrivateKey{N} privkey, char[]
 	message_p[0] = 1;
 	message_p[1] = context.len;
 	message_p[2 : context.len] = context[..];
-	message_p[2 + context.len : 11] = @as_char_view(pre_hash.oid)[^12..];
+	message_p[2 + context.len : 11] = @as_char_view(pre_hash.oid)[^11..];
 	message_p[2 + context.len + 11 ..] = hash[..];
 	$SigType signature = sign_internal{N >> 3, $type, $mode}(message_p, privkey, addrnd: addrnd, hedged: hedged);
 	res[..] = @as_char_view(signature)[..];
@@ -345,7 +345,7 @@ macro bool hash_verify(char[] message, SlhDsaPreHashType pre_hash, SlhDsaSignatu
 	message_p[0] = 1;
 	message_p[1] = context.len;
 	message_p[2 : context.len] = context[..];
-	message_p[2 + context.len : 11] = @as_char_view(pre_hash.oid)[^12..];
+	message_p[2 + context.len : 11] = @as_char_view(pre_hash.oid)[^11..];
 	message_p[2 + context.len + 11 ..] = hash[..];
 	return verify_internal(message_p, sig, pubkey);
 }
