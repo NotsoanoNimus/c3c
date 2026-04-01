@@ -228,7 +228,7 @@ enum SlhDsaMode
 
  @require @in(Z, 16, 24, 32) : "The `N` size must be set to the appropriate supported key size: 16, 24, or 32."
 *>
-typedef SlhDsaNode <Z> = inline char[Z];
+alias SlhDsaNode <Z> = char[Z];
 
 <*
  See Section 9.1 of FIPS-205.
