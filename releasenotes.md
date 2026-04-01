@@ -1,5 +1,27 @@
 # C3C Release Notes
 
+## 0.8.0 Change list
+
+### Changes / improvements
+- Removed "old-enums, old-slice-copy and old-compact-eq" feature flags.
+- Removed deprecated `$evaltype`.
+- Removed all deprecated (as of 0.7.11) types and functions from the stdlib.
+- Removed deprecated `iXX` and `uXX` suffixes.
+- Removed deprecated `Enum.lookup`.
+- Removed deprecated `?` as suffix operator in the expression `io::EOF?`.
+- Removed deprecated `module foo {Type}` generic syntax.
+- Distinct types now defaults to be "structlike"
+- Removed `@structlike` attribute.
+- Removed deprecated `@extern` attribute.
+- `:` in contracts before description is now mandatory.
+- Removed deprecated `Enum.associated` (use `Enum.membersof`).
+- Removed deprecated `Enum.elements` (use `Enum.len`).
+- Removed deprecated `foo_function.params` (use `foo_function.paramsof`). 
+- Removed deprecated `$is_const`.
+- Removed deprecated `$assignable`.
+- Enums now no longer directly support `+` and `-` – use ordinals instead.
+- For enums, using `++` and `--` will step through enums with implicit wrap-around.
+
 ## 0.7.11 Change list
 
 ### Changes / improvements
@@ -40,7 +62,7 @@
 - Add vector function `cubic_hermite`
 - Deprecated `sq_magnitude`, `barycenter`, `towards`, `ortho_normalize`, `clamp_mag`, use `length_sq`, `barycentric`, `move_towards`, `orthonormalize`, `clamp_length` instead.
 - Add Quaternion conversion functions to from Euler angles and axis+angle.
-- `math::deg_to_rad` and `math::rad_to_def` respects the underlying type, returning `float` on a `float` argument.
+- `math::deg_to_rad` and `math::rad_to_deg` respects the underlying type, returning `float` on a `float` argument.
 - Added `float.to_radians` and `float.to_degrees` and the same for `double`.
 - Added `Quat`, `Mat2`, `Mat3` and `Mat4`, `Vec2`, `Vec3`, `Vec4` aliases.
 - Added `is_normalized` to Quaternion and floating point vectors.
@@ -57,6 +79,7 @@
 - Add a builtin `TIMEOUT` fault definition. #3022
 - Base32, Base64, Hex and Codepage encoding deprecates `encode_buffer` and `decode_buffer`. Those are replaced by `encode_into` and `decode_into` with `dst` being the first argument. #3055 
 - `hex::encode_bytes` and `hex::decode_bytes` are deprecated in favour of `hex::encode_bytes_into` and `hex::decode_bytes_into` which has `dst` the first argument. #3055
+- Deprecation of `@unaligned_load` and `@unaligned_store`. Use `mem::load` and `mem::store` instead.
 
 ### Fixes
 - `@deprecated` in function contracts would be processed twice, causing a compilation error despite being correct.
@@ -109,6 +132,14 @@
 - Lambda check might run against a missing type definition if the function type alias was invalid.
 - Missing check when doing `$foo++` would crash the compiler if the variable wasn't initialized.
 - Incorrect handling of attribute operator symbols could crash the compiler instead of producing an error.
+- Crash instead of error when the first method parameter is a vaarg.
+- Fixes to UnalignedRef.
+- Codegen would not pop debug location for a never-entered for loop, crashing LLVM lowering.
+- Double negating a vector would cause a crash in lowering.
+- Combining operator overload on a variadic method would cause a crash rather than emitting an error in some cases.
+- Lambdas as default arguments were tagged with the wrong module, leading to linking issues.
+- An initializer list with an optional field was incorrectly considered constant.
+- Fix in ringbuffer for the case of popping at position 0.
 
 ## 0.7.10 Change list
 
