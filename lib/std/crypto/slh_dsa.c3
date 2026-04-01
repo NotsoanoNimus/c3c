@@ -231,18 +231,17 @@ macro SlhDsaKeyPair{N}? keygen(SlhDsaHashType $type = SHAKE, SlhDsaMode $mode = 
  @return? entropy::SECURE_RANDOM_UNAVAILABLE : "The cryptographically-secure PRNG is not available. You may need to set `hedged` to `false` to continue."
 *>
 macro char[]? sign(Allocator allocator, SlhDsaPrivateKey{N} privkey, char[] message, char[] context = {},
-	bool hedged = true, SlhDsaHashType $type = SHAKE, SlhDsaMode $mode = FAST) <N> => @pool()
+	bool hedged = true, char[N >> 3] additional_randomness = {}, SlhDsaHashType $type = SHAKE, SlhDsaMode $mode = FAST) <N> => @pool()
 {
-	var $SigType = $typeof(SlhDsaSignature{N >> 3, $type, $mode});
+	var $SigType = SlhDsaSignature{N >> 3, $type, $mode};
 	char[] res = alloc::new_array(allocator, char, $SigType.sizeof);
-	char[N] addrnd;
-	if (hedged) entropy::fill(addrnd[..])!;
+	if (hedged && additional_randomness == (char[N >> 3]){}) entropy::fill(additional_randomness[..])!;
 	char[] message_p = alloc::alloc_array(tmem, char, 1 + 1 + context.len + message.len);
 	message_p[0] = 0;
-	message_p[1] = context.len;
+	message_p[1] = (char)context.len;
 	message_p[2 : context.len] = context[..];
 	message_p[2 + context.len ..] = message[..];
-	$SigType signature = sign_internal{N >> 3, $type, $mode}(message, privkey, addrnd: addrnd, hedged: hedged);
+	$SigType signature = sign_internal{N >> 3, $type, $mode}(message, privkey, addrnd: additional_randomness, hedged: hedged);
 	res[..] = @as_char_view(signature)[..];
 	return res;
 }
@@ -612,35 +611,35 @@ fn bool XmssSignature.eq(&self, XmssSignature other) @operator(==) => member_eq(
 <*
  Algorithm 9.
 *>
-fn char[N] xmss_node(SlhDsaPrivateKey{N << 3} privkey, uint node_index, uint node_height, SlhDsaAddress* adrs)
+fn char[N] xmss_node(SlhDsaPrivateKey{N << 3} privkey, uint128 node_index, uint128 node_height, SlhDsaAddress* adrs)
 {
 	if (node_height == 0)
 	{
 		adrs.set_type_and_clear(WOTS_HASH);
-		adrs.set_key_pair_address(node_index);
+		adrs.set_key_pair_address((uint)node_index);
 		return wots_pk_gen(privkey, adrs);
 	}
 	char[N] left  = xmss_node(privkey, 2 * node_index, node_height - 1, adrs);
 	char[N] right = xmss_node(privkey, 2 * node_index + 1, node_height - 1, adrs);
 	adrs.set_type_and_clear(TREE);
-	adrs.set_tree_height(node_height);
-	adrs.set_tree_index(node_index);
+	adrs.set_tree_height((uint)node_height);
+	adrs.set_tree_index((uint)node_index);
 	return h(privkey.pub.seed, adrs, (char[2 * N]){ ...left, ...right });
 }
 
 <*
  Algorithm 10.
 *>
-fn XmssSignature xmss_sign(char[N] m, SlhDsaPrivateKey{N << 3} privkey, uint index, SlhDsaAddress* adrs)
+fn XmssSignature xmss_sign(char[N] m, SlhDsaPrivateKey{N << 3} privkey, uint128 index, SlhDsaAddress* adrs)
 {
 	XmssSignature sig;
 	for (uint j = 0; j < XMSS_HEIGHT; j++)
 	{
-		uint k = (uint)math::floor(index / math::pow(2, j)) ^ 1;
+		uint128 k = (uint128)math::floor(index / math::pow(2, j)) ^ 1;
 		sig.auth_path[j * N : N] = xmss_node(privkey, k, j, adrs)[..];
 	}
 	adrs.set_type_and_clear(WOTS_HASH);
-	adrs.set_key_pair_address(index);
+	adrs.set_key_pair_address((uint)index);
 	sig.wots = wots_sign(m, privkey, adrs);
 	return sig;
 }
@@ -648,14 +647,14 @@ fn XmssSignature xmss_sign(char[N] m, SlhDsaPrivateKey{N << 3} privkey, uint ind
 <*
  Algorithm 11.
 *>
-fn char[N] xmss_pk_from_sig(uint index, XmssSignature sig, char[N] m, SlhDsaPublicKey{N << 3} pubkey, SlhDsaAddress* adrs)
+fn char[N] xmss_pk_from_sig(uint128 index, XmssSignature sig, char[N] m, SlhDsaPublicKey{N << 3} pubkey, SlhDsaAddress* adrs)
 {
 	char[2 * N] nodes;
 	adrs.set_type_and_clear(WOTS_HASH);
-	adrs.set_key_pair_address(index);
+	adrs.set_key_pair_address((uint)index);
 	nodes[0 : N] = wots_pk_from_sig(sig.wots, m, pubkey, adrs)[..];
 	adrs.set_type_and_clear(TREE);
-	adrs.set_tree_index(index);
+	adrs.set_tree_index((uint)index);
 	for (uint k = 0; k < XMSS_HEIGHT; k++)
 	{
 		adrs.set_tree_height(k + 1);
@@ -699,7 +698,7 @@ fn bool HypertreeSignature.eq(&self, HypertreeSignature other) @operator(==)
 <*
  Algorithm 12.
 *>
-fn HypertreeSignature ht_sign(char[N] m, SlhDsaPrivateKey{N << 3} privkey, uint index_tree, uint index_leaf)
+fn HypertreeSignature ht_sign(char[N] m, SlhDsaPrivateKey{N << 3} privkey, uint128 index_tree, uint128 index_leaf)
 {
 	HypertreeSignature sig;
 	SlhDsaAddress adrs;
@@ -724,14 +723,14 @@ fn HypertreeSignature ht_sign(char[N] m, SlhDsaPrivateKey{N << 3} privkey, uint 
 <*
  Algorithm 13.
 *>
-fn bool ht_verify(char[N] m, HypertreeSignature sig, SlhDsaPublicKey{N << 3} pubkey, uint index_tree, uint index_leaf)
+fn bool ht_verify(char[N] m, HypertreeSignature sig, SlhDsaPublicKey{N << 3} pubkey, uint128 index_tree, uint128 index_leaf)
 {
 	SlhDsaAddress adrs;
 	adrs.set_tree_address(index_tree);
 	char[N] node = xmss_pk_from_sig(index_leaf, sig.xmss_sigs[0], m, pubkey, &adrs);
 	for (uint j = 1; j < PARAMS.d; j++)
 	{
-		index_leaf = index_tree % (uint)math::pow(2, XMSS_HEIGHT);
+		index_leaf = index_tree % (uint128)math::pow(2, XMSS_HEIGHT);
 		index_tree = index_tree >> XMSS_HEIGHT;
 		adrs.set_layer_address(j);
 		adrs.set_tree_address(index_tree);
@@ -773,31 +772,31 @@ fn bool ForsSignature.eq(&self, ForsSignature other) @operator(==)
 <*
  Algorithm 14.
 *>
-fn char[N] fors_sk_gen(SlhDsaPrivateKey{N << 3} privkey, SlhDsaAddress* adrs, uint index)
+fn char[N] fors_sk_gen(SlhDsaPrivateKey{N << 3} privkey, SlhDsaAddress* adrs, uint128 index)
 {
 	SlhDsaAddress sk_adrs = *adrs;
 	sk_adrs.set_type_and_clear(FORS_PRF);
 	sk_adrs.set_key_pair_address(adrs.get_key_pair_address());
-	sk_adrs.set_tree_index(index);
+	sk_adrs.set_tree_index((uint)index);
 	return prf(privkey.pub.seed, privkey.seed, &sk_adrs);
 }
 
 <*
  Algorithm 15.
 *>
-fn char[N] fors_node(SlhDsaPrivateKey{N << 3} privkey, uint node_index, uint node_height, SlhDsaAddress* adrs)
+fn char[N] fors_node(SlhDsaPrivateKey{N << 3} privkey, uint128 node_index, uint128 node_height, SlhDsaAddress* adrs)
 {
 	if (node_height == 0)
 	{
 		char[N] sk = fors_sk_gen(privkey, adrs, node_index);
 		adrs.set_tree_height(0);
-		adrs.set_tree_index(node_index);
+		adrs.set_tree_index((uint)node_index);
 		return f(privkey.pub.seed, adrs, sk);
 	}
 	char[N] left  = fors_node(privkey, 2 * node_index, node_height - 1, adrs);
 	char[N] right = fors_node(privkey, 2 * node_index + 1, node_height - 1, adrs);
-	adrs.set_tree_height(node_height);
-	adrs.set_tree_index(node_index);
+	adrs.set_tree_height((uint)node_height);
+	adrs.set_tree_index((uint)node_index);
 	return h(privkey.pub.seed, adrs, (char[2 * N]){ ...left, ...right });
 }
 
@@ -810,11 +809,11 @@ fn ForsSignature fors_sign(char[FORS_DIGEST_LEN] md, SlhDsaPrivateKey{N << 3} pr
 	uint[PARAMS.k] indices = base_2b(md[..], PARAMS.a, PARAMS.k);
 	for (uint i = 0; i < PARAMS.k; i++)
 	{
-		sig.keys[i].private_key = fors_sk_gen(privkey, adrs, i * (uint)math::pow(2, PARAMS.a) + indices[i]);
+		sig.keys[i].private_key = fors_sk_gen(privkey, adrs, i * (uint128)math::pow(2, PARAMS.a) + indices[i]);
 		for (uint j = 0; j < PARAMS.a; j++)
 		{
 			uint s = (uint)math::floor(indices[i] / (double)math::pow(2, j)) ^ 1;
-			sig.keys[i].auth_path[j : N] = fors_node(privkey, i * (uint)math::pow(2, PARAMS.a - j) + s, j, adrs)[..];
+			sig.keys[i].auth_path[j : N] = fors_node(privkey, i * (uint128)math::pow(2, PARAMS.a - j) + s, j, adrs)[..];
 		}
 	}
 	return sig;
@@ -904,11 +903,11 @@ fn SlhDsaSignature sign_internal(char[] message, SlhDsaPrivateKey{N << 3} privke
 	sig.randomness = prf_msg(privkey.prf, addrnd, message);
 	char[PARAMS.m] digest = hash_msg(sig.randomness, privkey.pub, message);
 	char[] md = digest[:DIGEST_SPAN];
-	uint index_tree = (uint)to_int(digest[DIGEST_SPAN:TREE_SPAN], TREE_SPAN) % (uint)math::pow(2, PARAMS.h - PARAMS.h / PARAMS.d);
-	uint index_leaf = to_int(digest[(DIGEST_SPAN + TREE_SPAN):LEAF_SPAN], LEAF_SPAN) % (uint)math::pow(2, PARAMS.h / PARAMS.d);
-	adrs.set_tree_address(index_tree);
+	uint128 index_tree = to_int(digest[DIGEST_SPAN:TREE_SPAN], TREE_SPAN) % (uint128)math::pow(2, PARAMS.h - PARAMS.h / PARAMS.d);
+	uint128 index_leaf = to_int(digest[(DIGEST_SPAN + TREE_SPAN):LEAF_SPAN], LEAF_SPAN) % (uint128)math::pow(2, PARAMS.h / PARAMS.d);
+	adrs.set_tree_address((uint)index_tree);
 	adrs.set_type_and_clear(FORS_TREE);
-	adrs.set_key_pair_address(index_leaf);
+	adrs.set_key_pair_address((uint)index_leaf);
 	sig.fors_sig = fors_sign(md[:DIGEST_SPAN], privkey, &adrs);
 	char[N] pk_fors = fors_pk_from_sig(sig.fors_sig, md[:DIGEST_SPAN], privkey.pub, &adrs);
 	sig.ht_sig = ht_sign(pk_fors, privkey, index_tree, index_leaf);
@@ -926,11 +925,11 @@ fn bool verify_internal(char[] message, SlhDsaSignature sig, SlhDsaPublicKey{N <
 	SlhDsaAddress adrs;
 	char[PARAMS.m] digest = hash_msg(sig.randomness, pubkey, message);
 	char[] md = digest[:DIGEST_SPAN];
-	uint index_tree = (uint)to_int(digest[DIGEST_SPAN:TREE_SPAN], TREE_SPAN) % (uint)math::pow(2, PARAMS.h - PARAMS.h / PARAMS.d);
-	uint index_leaf = to_int(digest[(DIGEST_SPAN + TREE_SPAN):LEAF_SPAN], LEAF_SPAN) % (uint)math::pow(2, PARAMS.h / PARAMS.d);
-	adrs.set_tree_address(index_tree);
+	uint128 index_tree = (uint128)to_int(digest[DIGEST_SPAN:TREE_SPAN], TREE_SPAN) % (uint128)math::pow(2, PARAMS.h - PARAMS.h / PARAMS.d);
+	uint128 index_leaf = to_int(digest[(DIGEST_SPAN + TREE_SPAN):LEAF_SPAN], LEAF_SPAN) % (uint128)math::pow(2, PARAMS.h / PARAMS.d);
+	adrs.set_tree_address((uint)index_tree);
 	adrs.set_type_and_clear(FORS_TREE);
-	adrs.set_key_pair_address(index_leaf);
+	adrs.set_key_pair_address((uint)index_leaf);
 	char[N] pk_fors = fors_pk_from_sig(sig.fors_sig, md[:DIGEST_SPAN], pubkey, &adrs);
 	return ht_verify(pk_fors, sig.ht_sig, pubkey, index_tree, index_leaf);
 }
