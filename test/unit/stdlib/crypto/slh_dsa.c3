@@ -27,7 +27,7 @@ struct SlhDsaTestVector <N>
 	char[] context;
 	char[] signature;
 	bool hedged;
-	char[] addrnd;
+	SlhDsaNode{N >> 3} addrnd;
 }
 
 
@@ -53,10 +53,10 @@ fn void simple_sign_128()
 {
 	foreach (i, v : VECTORS_128)
 	{
+		char[] sig = slh_dsa::sign{128}(tmem, v.key_pair.privkey, v.message, context: v.context, hedged: v.hedged, additional_randomness: v.addrnd)!!;
+		test::eq(sig.len, v.signature.len);
 		// Do not use test::eq here unless you want 25+KiB dumping to stdout on failure.
-		test::@check(v.signature[..] == slh_dsa::sign{128}(tmem, v.key_pair.privkey, v.message, v.context,
-			hedged: v.hedged, additional_randomness: v.addrnd[:128 >> 3])!![..],
-			"Signature mismatch for vector %d.", i);
+		test::@check(v.signature == sig, "Signature mismatch for vector %d.\n\tEXP: %h...\n\tGOT: %h...\n", i, v.signature[:48], sig[:48]);
 	}
 }
 
