@@ -883,22 +883,22 @@ fn SlhDsaNode{N} fors_pk_from_sig(ForsSignature sig, char[FORS_DIGEST_LEN] md, S
 	{
 		adrs.set_tree_height(0);
 		adrs.set_tree_index(i * (uint128)math::pow(2, PARAMS.a) + indices[i]);
-		tmp = f(pubkey.seed, adrs, sig.keys[i].private_key);
+		roots[i] = f(pubkey.seed, adrs, sig.keys[i].private_key);
 		for (uint j = 0; j < PARAMS.a; j++)
 		{
 			adrs.set_tree_height((uint128)j + 1);
 			if ((uint128)math::floor(indices[i] / (double)math::pow(2, j)) % 2 == 0)
 			{
 				adrs.set_tree_index(adrs.get_tree_index() / 2);
-				tmp = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ tmp, sig.keys[i].auth_path[j] });
+				roots[i] = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ tmp, sig.keys[i].auth_path[j] });
 			}
 			else
 			{
 				adrs.set_tree_index((adrs.get_tree_index() - 1) / 2);
-				tmp = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ sig.keys[i].auth_path[j], tmp });
+				roots[i] = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ sig.keys[i].auth_path[j], tmp });
 			}
 		}
-		roots[i] = tmp;
+		// roots[i] = tmp;
 	}
 	SlhDsaAddress fors_pk_adrs = *adrs;
 	fors_pk_adrs.set_type_and_clear(FORS_ROOTS);
