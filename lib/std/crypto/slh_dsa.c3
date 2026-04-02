@@ -235,10 +235,10 @@ alias SlhDsaNode <Z> = char[Z];
 
  @require @in(N, 128, 192, 256) : "The `N` size must be set to the appropriate supported key size: 128, 192, or 256."
 *>
-struct SlhDsaPublicKey <N>
+struct SlhDsaPublicKey <N> @packed
 {
-	SlhDsaNode{N >> 3} root;
 	SlhDsaNode{N >> 3} seed;
+	SlhDsaNode{N >> 3} root;
 }
 fn bool SlhDsaPublicKey.eq(&self, SlhDsaPublicKey{N} other) @operator(==) => member_eq(*self, other);
 
@@ -247,7 +247,7 @@ fn bool SlhDsaPublicKey.eq(&self, SlhDsaPublicKey{N} other) @operator(==) => mem
 
  @require @in(N, 128, 192, 256) : "The `N` size must be set to the appropriate supported key size: 128, 192, or 256."
 *>
-struct SlhDsaPrivateKey <N>
+struct SlhDsaPrivateKey <N> @packed
 {
 	SlhDsaNode{N >> 3} seed;   // used to generate all WOTS+ and FORS pk elements
 	SlhDsaNode{N >> 3} prf;   // used to generate a randomization value for randomized message hashing
@@ -256,7 +256,7 @@ struct SlhDsaPrivateKey <N>
 fn bool SlhDsaPrivateKey.eq(&self, SlhDsaPrivateKey{N} other) @operator(==) => member_eq(*self, other);
 
 <* A single object that contains both the public and private keys. *>
-struct SlhDsaKeyPair <N>
+struct SlhDsaKeyPair <N> @packed
 {
 	SlhDsaPublicKey{N} pubkey;
 	SlhDsaPrivateKey{N} privkey;
@@ -558,10 +558,10 @@ const uint WOTS_LEN = WOTS_LEN1 + WOTS_LEN2;
 <*
  Algorithm 5.
 *>
-fn SlhDsaNode{N} chain(SlhDsaNode{N} x, uint128 i, uint128 s, SlhDsaPublicKey{N << 3} pubkey, SlhDsaAddress* adrs) => @pool()
+fn SlhDsaNode{N} chain(SlhDsaNode{N} input, uint128 index, uint128 steps, SlhDsaPublicKey{N << 3} pubkey, SlhDsaAddress* adrs) => @pool()
 {
-	SlhDsaNode{N} tmp = x;
-	for (uint128 j = i; j < i + s; j++)
+	SlhDsaNode{N} tmp = input;
+	for (uint128 j = index; j < index + steps; j++)
 	{
 		adrs.set_hash_address(j);
 		tmp = f(pubkey.seed, adrs, tmp);
@@ -646,19 +646,19 @@ fn SlhDsaNode{N} wots_pk_from_sig(SlhDsaNode{N}[WOTS_LEN] sig, SlhDsaNode{N} m, 
 // XMSS (Section 6) - related algorithms, constants, helpers, et al.
 //
 
-<*
- An XMSS signature consists of a WOTS+ signature and an authentication path through a
- Merkle Tree, which always provides a path to the root node (the XMSS signature).
-*>
-const uint XMSS_SIGNATURE_LEN = (WOTS_LEN + XMSS_HEIGHT) * N;
+// <*
+//  An XMSS signature consists of a WOTS+ signature and an authentication path through a
+//  Merkle Tree, which always provides a path to the root node (the XMSS signature).
+// *>
+// const uint XMSS_SIGNATURE_LEN = (WOTS_LEN + XMSS_HEIGHT) * N;
 
-<* The height of a single XMSS Merkle Tree. *>
-const uint XMSS_HEIGHT = PARAMS.hp;
+// <* The height of a single XMSS Merkle Tree. *>
+// const uint XMSS_HEIGHT = PARAMS.hp;
 
 struct XmssSignature @packed
 {
 	SlhDsaNode{N}[WOTS_LEN] wots;
-	SlhDsaNode{N}[XMSS_HEIGHT] auth_path;
+	SlhDsaNode{N}[PARAMS.hp] auth_path;
 }
 fn bool XmssSignature.eq(&self, XmssSignature other) @operator(==) => member_eq(*self, other);
 
@@ -737,7 +737,7 @@ fn SlhDsaNode{N} xmss_pk_from_sig(uint128 index, XmssSignature sig, SlhDsaNode{N
 <* A hypertree signature consists of `d` XMSS signatures, from lowest to uppermost. *>
 const uint HYPERTREE_SIGNATURE_LEN = (PARAMS.h + (PARAMS.d * WOTS_LEN)) * N;   // alt: PARAMS.d * XmssSignature.sizeof
 
-struct HypertreeSignature
+struct HypertreeSignature @packed
 {
 	XmssSignature[PARAMS.d] xmss_sigs;
 }
@@ -804,14 +804,14 @@ fn bool ht_verify(SlhDsaNode{N} m, HypertreeSignature sig, SlhDsaPublicKey{N << 
 // const uint FORS_T = (uint)math::pow(2, (int)PARAMS.a); // TODO: not a constant value - is this even necessary?
 const uint FORS_DIGEST_LEN = @ct_ceil((PARAMS.a * PARAMS.k) / 8.0);
 
-struct ForsPrivateSet
+struct ForsPrivateSet @packed
 {
 	SlhDsaNode{N} private_key;
 	SlhDsaNode{N}[PARAMS.a] auth_path;
 }
 fn bool ForsPrivateSet.eq(&self, ForsPrivateSet other) @operator(==) => member_eq(*self, other);
 
-struct ForsSignature
+struct ForsSignature @packed
 {
 	ForsPrivateSet[PARAMS.k] keys;
 }
@@ -918,7 +918,7 @@ fn SlhDsaNode{N} fors_pk_from_sig(ForsSignature sig, char[FORS_DIGEST_LEN] md, S
 
 import std::collections::pair;   // TODO: do not return a Pair - this is temporary while refactoring
 
-struct SlhDsaSignature
+struct SlhDsaSignature @packed
 {
 	SlhDsaNode{N} randomness;
 	ForsSignature fors_sig;
