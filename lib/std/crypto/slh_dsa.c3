@@ -703,10 +703,9 @@ fn XmssSignature xmss_sign(SlhDsaNode{N} m, SlhDsaPrivateKey{N << 3} privkey, ui
 *>
 fn SlhDsaNode{N} xmss_pk_from_sig(uint128 index, XmssSignature sig, SlhDsaNode{N} m, SlhDsaPublicKey{N << 3} pubkey, SlhDsaAddress* adrs)
 {
-	SlhDsaNode{N}[2] nodes;
 	adrs.set_type_and_clear(WOTS_HASH);
 	adrs.set_key_pair_address(index);
-	nodes[0] = wots_pk_from_sig(sig.wots, m, pubkey, adrs);
+	SlhDsaNode{N} res = wots_pk_from_sig(sig.wots, m, pubkey, adrs);
 	adrs.set_type_and_clear(TREE);
 	adrs.set_tree_index(index);
 	for (uint k = 0; k < PARAMS.hp; k++)
@@ -715,16 +714,15 @@ fn SlhDsaNode{N} xmss_pk_from_sig(uint128 index, XmssSignature sig, SlhDsaNode{N
 		if ((uint128)math::floor(index / math::pow(2, k)) % 2 == 0)
 		{
 			adrs.set_tree_index(adrs.get_tree_index() / 2);
-			nodes[1] = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ nodes[0], sig.auth_path[k] });
+			res = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ res, sig.auth_path[k] });
 		}
 		else
 		{
 			adrs.set_tree_index((adrs.get_tree_index() - 1) / 2);
-			nodes[1] = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ sig.auth_path[k], nodes[0] });
+			res = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ sig.auth_path[k], res });
 		}
-		nodes[0] = nodes[1];
 	}
-	return nodes[0];
+	return res;
 }
 
 
@@ -879,29 +877,28 @@ fn ForsSignature fors_sign(char[FORS_DIGEST_LEN] md, SlhDsaPrivateKey{N << 3} pr
 fn SlhDsaNode{N} fors_pk_from_sig(ForsSignature sig, char[FORS_DIGEST_LEN] md, SlhDsaPublicKey{N << 3} pubkey, SlhDsaAddress* adrs)
 {
 	SlhDsaNode{N}[PARAMS.k] roots;
-	SlhDsaNode{N}[2] nodes;
+	SlhDsaNode{N} tmp;
 	uint128[PARAMS.k] indices = base_2b(md[..], PARAMS.a, PARAMS.k);
 	for (uint i = 0; i < PARAMS.k; i++)
 	{
 		adrs.set_tree_height(0);
 		adrs.set_tree_index(i * (uint128)math::pow(2, PARAMS.a) + indices[i]);
-		nodes[0] = f(pubkey.seed, adrs, sig.keys[i].private_key);
+		tmp = f(pubkey.seed, adrs, sig.keys[i].private_key);
 		for (uint j = 0; j < PARAMS.a; j++)
 		{
 			adrs.set_tree_height((uint128)j + 1);
 			if ((uint128)math::floor(indices[i] / (double)math::pow(2, j)) % 2 == 0)
 			{
 				adrs.set_tree_index(adrs.get_tree_index() / 2);
-				nodes[1] = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ nodes[0], sig.keys[i].auth_path[j] });
+				tmp = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ tmp, sig.keys[i].auth_path[j] });
 			}
 			else
 			{
 				adrs.set_tree_index((adrs.get_tree_index() - 1) / 2);
-				nodes[1] = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ sig.keys[i].auth_path[j], nodes[0] });
+				tmp = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ sig.keys[i].auth_path[j], tmp });
 			}
-			nodes[0] = nodes[1];
 		}
-		roots[i] = nodes[0];
+		roots[i] = tmp;
 	}
 	SlhDsaAddress fors_pk_adrs = *adrs;
 	fors_pk_adrs.set_type_and_clear(FORS_ROOTS);
