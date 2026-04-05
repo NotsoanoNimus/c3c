@@ -9,41 +9,32 @@ module std::crypto::slh_dsa @private;
 // TODO: Section 3.1, security requirement for destruction: pointers should be used to pass sensitive data as much as possible
 //       This is to limit how often stack memory would otherwise need to be explicitly zeroized in order to protect keys/data.
 
-import std::math;
+import std::math, std::bits;
 
 <*
  Compile-time 'ceil' implementation.
 
  @require $val < uint.max
 *>
-macro @ct_ceil($val) @const => (uint)$val + ((double)(uint)$val < $val ? 1 : 0);
+macro uint @ct_ceil($val) @const => (uint)$val + ((double)(uint)$val < $val ? 1 : 0);
 
+// TODO: the below can be done w/ bitcast
 <*
  Algorithm 2.
-
- @require x.len == $n : "The input byte-string `x` is not a suficient length."
 *>
-macro to_int(x, $n)
+macro uint128 to_uint128(x, $n)
 {
 	uint128 total;
-	for (uint i = 0; i < $n; i++) total = (total * 256) + x[i];
-	$switch:
-		$case $n == 1: return (char)total;
-		$case $n == 2: return (ushort)total;
-		$case $n <= 4: return (uint)total;
-		$case $n <= 8: return (ulong)total;
-		$case $n <= 16: return total;
-		$default: $error "Invalid 'n' constraint on Algorithm 2 (`to_int`).";
-	$endswitch
+	for (uint i = 0; i < $n; i++) total = (total * 256u) + x[i];
+	return total;
 }
 
 <*
  Algorithm 3.
 *>
-macro char[*] to_byte(x, $n)
+macro char[*] to_byte(uint128 total, $n)
 {
 	char[$n] res;
-	var total = x;
 	for (uint i = 0; i < $n; i++)
 	{
 		res[$n - 1 - i] = (char)total;
@@ -62,7 +53,7 @@ macro uint128[*] base_2b(char[] byte_string, uint $b, uint $out_len)
 	uint128[$out_len] res;
 	uint128 total;
 	uint in, bits;
-	for (usz out = 0; out < $out_len; out++)
+	for (sz out = 0; out < $out_len; out++)
 	{
 		while (bits < $b)
 		{
@@ -167,7 +158,7 @@ struct ForsKeygenAddress @packed   // type = FORS_PRF
 	uint index;
 }
 
-struct SlhDsaAddress @align(usz.sizeof) @packed
+struct SlhDsaAddress @align(uint.sizeof) @packed
 {
 	uint layer;   // height of an XMSS tree within the hypertree
 	uint[3] tree;   // position of an XMSS tree within a layer of the hypertree
@@ -198,8 +189,8 @@ fn void SlhDsaAddress.set_chain_address(&self, uint128 i) => @as_char_view(self.
 macro SlhDsaAddress.set_tree_height(&self, uint128 i) => self.set_chain_address(i);
 fn void SlhDsaAddress.set_hash_address(&self, uint128 i) => @as_char_view(self.wots_hash.hash)[..] = to_byte(i, uint.sizeof)[..];
 macro SlhDsaAddress.set_tree_index(&self, uint128 i) => self.set_hash_address(i);
-fn uint128 SlhDsaAddress.get_key_pair_address(&self) => (uint128)to_int(@as_char_view(self.wots_hash.key_pair), uint.sizeof);
-fn uint128 SlhDsaAddress.get_tree_index(&self) => (uint128)to_int(@as_char_view(self.wots_hash.hash), uint.sizeof);
+fn uint128 SlhDsaAddress.get_key_pair_address(&self) => to_uint128(@as_char_view(self.wots_hash.key_pair), uint.sizeof);
+fn uint128 SlhDsaAddress.get_tree_index(&self) => to_uint128(@as_char_view(self.wots_hash.hash), uint.sizeof);
 
 
 module std::crypto::slh_dsa;
@@ -280,30 +271,6 @@ macro SlhDsaKeyPair{N}? keygen(SlhDsaHashType $type = SHAKE, SlhDsaMode $mode = 
 	return keygen_internal{N >> 3, $type, $mode}(privkey.seed, privkey.prf, pubkey.seed);
 }
 
-<*
- Algorithm 22.
-
- @require @in(N, 128, 192, 256) : "The `N` size must be set to the appropriate supported key size: 128, 192, or 256."
- @require context.len <= 255 : "The `context` byte-string has a maximum length of 255 bytes."
-
- @return? entropy::SECURE_RANDOM_UNAVAILABLE : "The cryptographically-secure PRNG is not available. You may need to set `hedged` to `false` to continue."
-*>
-macro char[]? sign(Allocator allocator, SlhDsaPrivateKey{N} privkey, char[] message, char[] context = {},
-	bool hedged = true, SlhDsaNode{N >> 3} additional_randomness = {}, SlhDsaHashType $type = SHAKE, SlhDsaMode $mode = FAST) <N> => @pool()
-{
-	var $SigType = SlhDsaSignature{N >> 3, $type, $mode};
-	char[] res = alloc::new_array(allocator, char, $SigType.sizeof);
-	if (hedged && additional_randomness == (SlhDsaNode{N >> 3}){}) entropy::fill(additional_randomness[..])!;
-	char[] message_p = alloc::alloc_array(tmem, char, 1 + 1 + context.len + message.len);
-	message_p[0] = 0;
-	message_p[1] = (char)context.len;
-	message_p[2 : context.len] = context[..];
-	message_p[2 + context.len ..] = message[..];
-	$SigType signature = sign_internal{N >> 3, $type, $mode}(message_p, privkey, addrnd: additional_randomness, hedged: hedged);
-	res[..] = @as_char_view(signature)[..];
-	return res;
-}
-
 enum SlhDsaPreHashType : (UInt128BE oid)
 {
 	SHA256    { { 0x0609608648016503040201ull } },
@@ -312,30 +279,61 @@ enum SlhDsaPreHashType : (UInt128BE oid)
 	SHAKE256  { { 0x060960864801650304020Cull } },
 }
 
-// TODO TODO TODO: Again, way too long to be a macro - figure this out
+<*
+ NOTE: Per specification requirements, a random number generator with a strength of _at least_ `8N` bits _must_ be used.
+
+ @require @in(N, 16, 24, 32) : "The SLH-DSA 'n' value must be a supported integer length (16, 24, or 32 bytes)."
+ @require $typeof(HASH_TYPE) == SlhDsaHashType : "`HASH_TYPE` must be a valid value from the `SlhDsaHashType` enum."
+ @require $typeof(MODE) == SlhDsaMode : "`MODE` must be a valid value from the `SlhDsaMode` enum."
+*>
+module std::crypto::slh_dsa <N, HASH_TYPE, MODE>;
+
+import std::crypto, std::hash;
+
+<*
+ Algorithm 22.
+
+ @require context.len <= 255 : "The `context` byte-string has a maximum length of 255 bytes."
+
+ @return? entropy::SECURE_RANDOM_UNAVAILABLE : "The cryptographically-secure PRNG is not available. You may need to set `hedged` to `false` to continue."
+*>
+fn char[]? sign(Allocator allocator, SlhDsaPrivateKey{N << 3} privkey, char[] message, char[] context = {},
+	bool hedged = true, SlhDsaNode{N} additional_randomness = {}) => @pool()
+{
+	char[] res = alloc::new_array(allocator, char, SlhDsaSignature.sizeof);
+	if (hedged && additional_randomness == (SlhDsaNode{N}){}) entropy::fill(additional_randomness[..])!;
+	char[] message_p = alloc::alloc_array(tmem, char, 1 + 1 + context.len + message.len);
+	message_p[0] = 0;
+	message_p[1] = (char)context.len;
+	message_p[2 : context.len] = context[..];
+	message_p[2 + context.len ..] = message[..];
+	SlhDsaSignature signature = sign_internal(message_p, privkey, addrnd: additional_randomness, hedged: hedged);
+	res[..] = @as_char_view(signature)[..];
+	return res;
+}
+
 <*
  Algorithm 23.
 
- @require @in(N, 128, 192, 256) : "The `N` size must be set to the appropriate supported key size: 128, 192, or 256."
  @require context.len <= 255 : "The `context` byte-string has a maximum length of 255 bytes."
 
  @return? entropy::SECURE_RANDOM_UNAVAILABLE : "The cryptographically-secure PRNG is not available. You may need to set `hedged` to `false` to continue."
  @return? NOT_FOUND : "The pre-hash type is not valid."
 *>
-macro char[]? hash_sign(Allocator allocator, SlhDsaPrivateKey{N} privkey, char[] message, SlhDsaPreHashType pre_hash,
-	char[] context = {}, bool hedged = true, SlhDsaNode{N >> 3} additional_randomness = {}, SlhDsaHashType $type = SHAKE, SlhDsaMode $mode = FAST) <N> => @pool()
+fn char[]? hash_sign(Allocator allocator, SlhDsaPrivateKey{N << 3} privkey, char[] message, SlhDsaPreHashType pre_hash,
+	char[] context = {}, bool hedged = true, SlhDsaNode{N} additional_randomness = {}) => @pool()
 {
-	var $SigType = $typeof(SlhDsaSignature{N >> 3, $type, $mode});
 	char[64] tmp_hash;
 	char[] hash;
-	if (hedged && additional_randomness == (SlhDsaNode{N >> 3}){}) entropy::fill(additional_randomness[..])!;
+	char[] res = alloc::alloc_array(allocator, char, SlhDsaSignature.sizeof);
+	if (hedged && additional_randomness == (SlhDsaNode{N}){}) entropy::fill(additional_randomness[..])!;
 	switch (pre_hash)
 	{
 		case SHA256:
 			tmp_hash[:32] = sha256::hash(message)[..];
 			hash = tmp_hash[:32];
 		case SHA512:
-			tmp_hash[:32] = sha512::hash(message)[..];
+			tmp_hash[:64] = sha512::hash(message)[..];
 			hash = tmp_hash[:64];
 		case SHAKE128:
 			shake::xof_into(128, tmp_hash[:32], message);
@@ -347,23 +345,14 @@ macro char[]? hash_sign(Allocator allocator, SlhDsaPrivateKey{N} privkey, char[]
 	}
 	char[] message_p = alloc::alloc_array(tmem, char, 1 + 1 + context.len + 11 + hash.len);
 	message_p[0] = 1;
-	message_p[1] = context.len;
+	message_p[1] = (char)context.len;
 	message_p[2 : context.len] = context[..];
 	message_p[2 + context.len : 11] = @as_char_view(pre_hash.oid)[^11..];
 	message_p[2 + context.len + 11 ..] = hash[..];
-	$SigType signature = sign_internal{N >> 3, $type, $mode}(message_p, privkey, addrnd: additional_randomness, hedged: hedged);
+	SlhDsaSignature signature = sign_internal(message_p, privkey, addrnd: additional_randomness, hedged: hedged);
 	res[..] = @as_char_view(signature)[..];
 	return res;
 }
-
-<*
- NOTE: Per specification requirements, a random number generator with a strength of _at least_ `8N` bits _must_ be used.
-
- @require @in(N, 16, 24, 32) : "The SLH-DSA 'n' value must be a supported integer length (16, 24, or 32 bytes)."
- @require $typeof(HASH_TYPE) == SlhDsaHashType : "`HASH_TYPE` must be a valid value from the `SlhDsaHashType` enum."
- @require $typeof(MODE) == SlhDsaMode : "`MODE` must be a valid value from the `SlhDsaMode` enum."
-*>
-module std::crypto::slh_dsa <N, HASH_TYPE, MODE>;
 
 <*
  Algorithm 24.
@@ -578,7 +567,7 @@ fn SlhDsaNode{N} wots_pk_gen(SlhDsaPrivateKey{N << 3} privkey, SlhDsaAddress* ad
 	sk_adrs.set_type_and_clear(WOTS_PRF);
 	sk_adrs.set_key_pair_address(adrs.get_key_pair_address());
 	SlhDsaNode{N}[WOTS_LEN] chains;
-	for (usz i = 0; i < WOTS_LEN; i++)
+	for (uint i = 0; i < WOTS_LEN; i++)
 	{
 		sk_adrs.set_chain_address(i);
 		SlhDsaNode{N} sk = prf(privkey.pub.seed, privkey.seed, &sk_adrs);
@@ -739,13 +728,7 @@ struct HypertreeSignature @packed
 {
 	XmssSignature[PARAMS.d] xmss_sigs;
 }
-// TODO: Investigate why this doesn't work
-// fn bool HypertreeSignature.eq(&self, HypertreeSignature other) @operator(==) => member_eq(*self, other);
-fn bool HypertreeSignature.eq(&self, HypertreeSignature other) @operator(==)
-{
-	foreach (i, &s : self.xmss_sigs) if (*s != other.xmss_sigs[i]) return false;
-	return true;
-}
+fn bool HypertreeSignature.eq(&self, HypertreeSignature other) @operator(==) => member_eq(*self, other);
 
 <*
  Algorithm 12.
@@ -813,13 +796,7 @@ struct ForsSignature @packed
 {
 	ForsPrivateSet[PARAMS.k] keys;
 }
-// TODO: Investigate why this doesn't work
-// fn bool ForsSignature.eq(&self, ForsSignature other) @operator(==) => member_eq(*self, other);
-fn bool ForsSignature.eq(&self, ForsSignature other) @operator(==)
-{
-	foreach (i, &k : self.keys) if (*k != other.keys[i]) return false;
-	return true;
-}
+fn bool ForsSignature.eq(&self, ForsSignature other) @operator(==) => member_eq(*self, other);
 
 <*
  Algorithm 14.
@@ -890,15 +867,14 @@ fn SlhDsaNode{N} fors_pk_from_sig(ForsSignature sig, char[FORS_DIGEST_LEN] md, S
 			if ((uint128)math::floor(indices[i] / (double)math::pow(2, j)) % 2 == 0)
 			{
 				adrs.set_tree_index(adrs.get_tree_index() / 2);
-				roots[i] = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ tmp, sig.keys[i].auth_path[j] });
+				roots[i] = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ roots[i], sig.keys[i].auth_path[j] });
 			}
 			else
 			{
 				adrs.set_tree_index((adrs.get_tree_index() - 1) / 2);
-				roots[i] = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ sig.keys[i].auth_path[j], tmp });
+				roots[i] = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ sig.keys[i].auth_path[j], roots[i] });
 			}
 		}
-		// roots[i] = tmp;
 	}
 	SlhDsaAddress fors_pk_adrs = *adrs;
 	fors_pk_adrs.set_type_and_clear(FORS_ROOTS);
@@ -954,8 +930,8 @@ fn SlhDsaSignature sign_internal(char[] message, SlhDsaPrivateKey{N << 3} privke
 	sig.randomness = prf_msg(privkey.prf, addrnd, message);
 	char[PARAMS.m] digest = hash_msg(sig.randomness, privkey.pub, message);
 	char[] md = digest[:DIGEST_SPAN];
-	uint128 index_tree = to_int(digest[DIGEST_SPAN:TREE_SPAN], TREE_SPAN) % (uint128)math::pow(2, PARAMS.h - PARAMS.h / PARAMS.d);
-	uint128 index_leaf = to_int(digest[(DIGEST_SPAN + TREE_SPAN):LEAF_SPAN], LEAF_SPAN) % (uint128)math::pow(2, PARAMS.h / PARAMS.d);
+	uint128 index_tree = to_uint128(digest[DIGEST_SPAN:TREE_SPAN], TREE_SPAN) % (uint128)math::pow(2, PARAMS.h - PARAMS.h / PARAMS.d);
+	uint128 index_leaf = to_uint128(digest[(DIGEST_SPAN + TREE_SPAN):LEAF_SPAN], LEAF_SPAN) % (uint128)math::pow(2, PARAMS.h / PARAMS.d);
 	adrs.set_tree_address(index_tree);
 	adrs.set_type_and_clear(FORS_TREE);
 	adrs.set_key_pair_address(index_leaf);
@@ -974,8 +950,8 @@ fn bool verify_internal(char[] message, SlhDsaSignature sig, SlhDsaPublicKey{N <
 	SlhDsaAddress adrs;
 	char[PARAMS.m] digest = hash_msg(sig.randomness, pubkey, message);
 	char[] md = digest[:DIGEST_SPAN];
-	uint128 index_tree = to_int(digest[DIGEST_SPAN:TREE_SPAN], TREE_SPAN) % (uint128)math::pow(2, PARAMS.h - PARAMS.h / PARAMS.d);
-	uint128 index_leaf = to_int(digest[(DIGEST_SPAN + TREE_SPAN):LEAF_SPAN], LEAF_SPAN) % (uint128)math::pow(2, PARAMS.h / PARAMS.d);
+	uint128 index_tree = to_uint128(digest[DIGEST_SPAN:TREE_SPAN], TREE_SPAN) % (uint128)math::pow(2, PARAMS.h - PARAMS.h / PARAMS.d);
+	uint128 index_leaf = to_uint128(digest[(DIGEST_SPAN + TREE_SPAN):LEAF_SPAN], LEAF_SPAN) % (uint128)math::pow(2, PARAMS.h / PARAMS.d);
 	adrs.set_tree_address(index_tree);
 	adrs.set_type_and_clear(FORS_TREE);
 	adrs.set_key_pair_address(index_leaf);

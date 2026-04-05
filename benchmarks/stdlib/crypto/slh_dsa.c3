@@ -28,6 +28,6 @@ fn void sign_128()
 	entropy::fill(context[..])!!;
 
 	@start_benchmark();
-		slh_dsa::sign{128}(tmem, test_keyring_128.privkey, msg[..], context: context[..], hedged: false)!!;
+		slh_dsa::sign{128, SHAKE, FAST}(tmem, test_keyring_128.privkey, msg[..], context: context[..], hedged: false)!!;
 	@end_benchmark();
 }

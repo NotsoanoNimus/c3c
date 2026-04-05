@@ -36,7 +36,7 @@ module slh_dsa_tests @test;
 import std::crypto @public;
 import std::bits;
 
-fn void to_int()
+fn void to_uint128()
 {
 	char[8] tmp @align(ulong.sizeof);
 	for (usz i = 0; i < 256; i++)
@@ -44,7 +44,7 @@ fn void to_int()
 		if (csprng_supported) entropy::fill(tmp[..])!!;
 		if (!csprng_supported) tmp[7] = (char)i;
 		ulong num = env::BIG_ENDIAN ??? *(ulong*)tmp : bswap(*(ulong*)&tmp);
-		test::eq(num, slh_dsa::to_int(tmp, ulong.sizeof));
+		test::eq(num, slh_dsa::to_uint128(tmp, ulong.sizeof));
 	}
 }
 
@@ -90,7 +90,7 @@ fn void simple_sign_128()
 {
 	foreach (i, v : VECTORS_128)
 	{
-		char[] sig = slh_dsa::sign{128}(tmem, v.key_pair.privkey, v.message, context: v.context, hedged: v.hedged, additional_randomness: v.addrnd)!!;
+		char[] sig = slh_dsa::sign{16, SlhDsaHashType.SHAKE, SlhDsaMode.FAST}(tmem, v.key_pair.privkey, v.message, context: v.context, hedged: v.hedged, additional_randomness: v.addrnd)!!;
 		test::eq(sig.len, v.signature.len);
 		// Do not use test::eq here unless you want 25+KiB dumping to stdout on failure.
 		test::@check(v.signature == sig, "Signature mismatch for vector %d.\n\tEXP: %h...\n\tGOT: %h...\n", i, v.signature[:48], sig[:48]);
