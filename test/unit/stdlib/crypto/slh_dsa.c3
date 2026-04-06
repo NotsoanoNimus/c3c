@@ -27,14 +27,13 @@ struct SlhDsaTestVector <N>
 	char[] context;
 	char[] signature;
 	bool hedged;
-	SlhDsaNode{N >> 3} addrnd;
+	SlhDsaNode{N} addrnd;
 }
 
 
 module slh_dsa_tests @test;
 
-import std::crypto @public;
-import std::bits;
+import std::crypto @public, std::bits;
 
 fn void to_uint128()
 {
@@ -72,17 +71,22 @@ fn void base_2b()
 	test::eq(s[4], 0b011);
 }
 
+
+module slh_dsa_tests @test;
+
+import std::crypto;
+
 fn void simple_keygens()
 {
 	if (!csprng_supported) return;
 
-	SlhDsaKeyPair{128} a = slh_dsa::keygen{128}()!!;
+	SlhDsaKeyPair{128} a = slh_dsa::keygen{128, SlhDsaHashType.SHAKE, SlhDsaMode.FAST}()!!;
 	test::ne(a, (SlhDsaKeyPair{128}){});
 
-	SlhDsaKeyPair{192} b = slh_dsa::keygen{192}()!!;
+	SlhDsaKeyPair{192} b = slh_dsa::keygen{192, SlhDsaHashType.SHAKE, SlhDsaMode.FAST}()!!;
 	test::ne(b, (SlhDsaKeyPair{192}){});
 
-	SlhDsaKeyPair{256} c = slh_dsa::keygen{256}()!!;
+	SlhDsaKeyPair{256} c = slh_dsa::keygen{256, SlhDsaHashType.SHAKE, SlhDsaMode.FAST}()!!;
 	test::ne(c, (SlhDsaKeyPair{256}){});
 }
 
@@ -90,7 +94,7 @@ fn void simple_sign_128()
 {
 	foreach (i, v : VECTORS_128)
 	{
-		char[] sig = slh_dsa::sign{16, SlhDsaHashType.SHAKE, SlhDsaMode.FAST}(tmem, v.key_pair.privkey, v.message, context: v.context, hedged: v.hedged, additional_randomness: v.addrnd)!!;
+		char[] sig = slh_dsa::sign{128, SlhDsaHashType.SHAKE, SlhDsaMode.FAST}(tmem, v.key_pair.privkey, v.message, context: v.context, hedged: v.hedged, additional_randomness: v.addrnd)!!;
 		test::eq(sig.len, v.signature.len);
 		// Do not use test::eq here unless you want 25+KiB dumping to stdout on failure.
 		test::@check(v.signature == sig, "Signature mismatch for vector %d.\n\tEXP: %h...\n\tGOT: %h...\n", i, v.signature[:48], sig[:48]);

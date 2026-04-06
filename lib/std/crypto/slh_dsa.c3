@@ -4,6 +4,34 @@
 //
 // This implementation is based on FIPS-205 (https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.205.pdf).
 //
+module std::crypto::slh_dsa;
+
+// TODO: Remove after added to STDLIB
+import std::crypto::shake;
+alias Shake128 = Shake{128};
+alias Shake256 = Shake{256};
+
+enum SlhDsaHashType
+{
+	SHA2,
+	SHAKE,
+}
+
+enum SlhDsaMode
+{
+	SMALL,
+	FAST,
+}
+
+enum SlhDsaPreHashType : (UInt128BE oid)
+{
+	SHA256    { { 0x0609608648016503040201ull } },
+	SHA512    { { 0x0609608648016503040203ull } },
+	SHAKE128  { { 0x060960864801650304020Bull } },
+	SHAKE256  { { 0x060960864801650304020Cull } },
+}
+
+
 module std::crypto::slh_dsa @private;
 
 // TODO: Section 3.1, security requirement for destruction: pointers should be used to pass sensitive data as much as possible
@@ -80,19 +108,18 @@ struct SlhDsaParameters
 	uint hp;   // height of each Merkle Tree comprising a single XMSS signature
 	uint a;
 	uint k;
-	uint lg_w;
 	uint m;
 	uint category;
 	uint pubkey_len;
 	uint signature_len;
 }
 const SlhDsaParameters[] PARAMS_SET = {
-	{ 16, 63,  7, 9, 12, 14, 4, 30, 1, 32,  7_856 },   // 128s
-	{ 16, 66, 22, 3,  6, 33, 4, 34, 1, 32, 17_088 },   // 128f
-	{ 24, 63,  7, 9, 14, 17, 4, 39, 3, 48, 16_224 },   // 192s
-	{ 24, 66, 22, 3,  8, 33, 4, 42, 3, 48, 35_664 },   // 192f
-	{ 32, 64,  8, 8, 14, 22, 4, 47, 5, 64, 29_792 },   // 256s
-	{ 32, 68, 17, 4,  9, 35, 4, 49, 5, 64, 49_856 },   // 256f
+	{ .n = 16,  .h = 63,  .d =  7,  .hp = 9,  .a = 12,  .k = 14,  .m = 30,  .category = 1,  .pubkey_len = 32,  .signature_len =  7_856 },   // 128s
+	{ .n = 16,  .h = 66,  .d = 22,  .hp = 3,  .a =  6,  .k = 33,  .m = 34,  .category = 1,  .pubkey_len = 32,  .signature_len = 17_088 },   // 128f
+	{ .n = 24,  .h = 63,  .d =  7,  .hp = 9,  .a = 14,  .k = 17,  .m = 39,  .category = 3,  .pubkey_len = 48,  .signature_len = 16_224 },   // 192s
+	{ .n = 24,  .h = 66,  .d = 22,  .hp = 3,  .a =  8,  .k = 33,  .m = 42,  .category = 3,  .pubkey_len = 48,  .signature_len = 35_664 },   // 192f
+	{ .n = 32,  .h = 64,  .d =  8,  .hp = 8,  .a = 14,  .k = 22,  .m = 47,  .category = 5,  .pubkey_len = 64,  .signature_len = 29_792 },   // 256s
+	{ .n = 32,  .h = 68,  .d = 17,  .hp = 4,  .a =  9,  .k = 35,  .m = 49,  .category = 5,  .pubkey_len = 64,  .signature_len = 49_856 },   // 256f
 };
 
 macro SlhDsaParameters select_params($strength, SlhDsaMode $mode) @const
@@ -193,115 +220,96 @@ fn uint128 SlhDsaAddress.get_key_pair_address(&self) => to_uint128(@as_char_view
 fn uint128 SlhDsaAddress.get_tree_index(&self) => to_uint128(@as_char_view(self.wots_hash.hash), uint.sizeof);
 
 
-module std::crypto::slh_dsa;
-
-import std::crypto::entropy, std::collections::pair;
-import std::hash::sha256, std::hash::sha512, std::crypto::shake;
-
-// TODO: Consider moving these types of aliases up into Keccak stuff.
-alias Shake128 = Shake{128};
-alias Shake256 = Shake{256};
-
-enum SlhDsaHashType
-{
-	SHA2,
-	SHAKE,
-}
-
-enum SlhDsaMode
-{
-	SMALL,
-	FAST,
-}
-
 <*
- Each node is an SLH-DSA "unit" that ends up being `N` bytes wide.
-
- @require @in(Z, 16, 24, 32) : "The `N` size must be set to the appropriate supported key size: 16, 24, or 32."
+ @require @in(NODE_BITS, 128, 192, 256) : "The SLH-DSA 'n' value must be a supported integer length (128, 192, or 256 bits)."
 *>
-alias SlhDsaNode <Z> = char[Z];
+module std::crypto::slh_dsa <NODE_BITS>;
+
+import std::crypto, std::hash;
+
+<* The tree-node size `N` in bytes. *>
+const sz NODE_BYTES @local = NODE_BITS >> 3;
+
+<* Represents a single leaf node in the SLH-DSA hypertree. *>
+alias SlhDsaNode = char[NODE_BYTES];
 
 <*
  See Section 9.1 of FIPS-205.
-
- @require @in(N, 128, 192, 256) : "The `N` size must be set to the appropriate supported key size: 128, 192, or 256."
 *>
-struct SlhDsaPublicKey <N> @packed
+struct SlhDsaPublicKey @packed
 {
-	SlhDsaNode{N >> 3} seed;
-	SlhDsaNode{N >> 3} root;
+	SlhDsaNode seed;
+	SlhDsaNode root;
 }
-fn bool SlhDsaPublicKey.eq(&self, SlhDsaPublicKey{N} other) @operator(==) => member_eq(*self, other);
+fn bool SlhDsaPublicKey.eq(&self, SlhDsaPublicKey other) @operator(==) => member_eq(*self, other);
 
 <*
  See Section 9.1 of FIPS-205.
-
- @require @in(N, 128, 192, 256) : "The `N` size must be set to the appropriate supported key size: 128, 192, or 256."
 *>
-struct SlhDsaPrivateKey <N> @packed
+struct SlhDsaPrivateKey @packed
 {
-	SlhDsaNode{N >> 3} seed;   // used to generate all WOTS+ and FORS pk elements
-	SlhDsaNode{N >> 3} prf;   // used to generate a randomization value for randomized message hashing
-	SlhDsaPublicKey{N} pub;
+	SlhDsaNode seed;   // used to generate all WOTS+ and FORS pk elements
+	SlhDsaNode prf;   // used to generate a randomization value for randomized message hashing
+	SlhDsaPublicKey pub;
 }
-fn bool SlhDsaPrivateKey.eq(&self, SlhDsaPrivateKey{N} other) @operator(==) => member_eq(*self, other);
+fn bool SlhDsaPrivateKey.eq(&self, SlhDsaPrivateKey other) @operator(==) => member_eq(*self, other);
 
 <* A single object that contains both the public and private keys. *>
-struct SlhDsaKeyPair <N> @packed
+struct SlhDsaKeyPair @packed
 {
-	SlhDsaPublicKey{N} pubkey;
-	SlhDsaPrivateKey{N} privkey;
+	SlhDsaPublicKey pubkey;
+	SlhDsaPrivateKey privkey;
 }
-fn bool SlhDsaKeyPair.eq(&self, SlhDsaKeyPair{N} other) @operator(==) => member_eq(*self, other);
-
-// TODO: Refactor and remove macros here
-// TODO: Allow PRNG hook to be applied here
-<*
- Algorithm 21.
-
- @require @in(N, 128, 192, 256) : "The `N` size must be set to the appropriate supported key size: 128, 192, or 256."
-*>
-macro SlhDsaKeyPair{N}? keygen(SlhDsaHashType $type = SHAKE, SlhDsaMode $mode = FAST) <N>
-{
-	SlhDsaPrivateKey{N} privkey;
-	SlhDsaPublicKey{N} pubkey;
-	entropy::fill(privkey.seed[..])!;
-	entropy::fill(privkey.prf[..])!;
-	entropy::fill(pubkey.seed[..])!;
-	return keygen_internal{N >> 3, $type, $mode}(privkey.seed, privkey.prf, pubkey.seed);
-}
-
-enum SlhDsaPreHashType : (UInt128BE oid)
-{
-	SHA256    { { 0x0609608648016503040201ull } },
-	SHA512    { { 0x0609608648016503040203ull } },
-	SHAKE128  { { 0x060960864801650304020Bull } },
-	SHAKE256  { { 0x060960864801650304020Cull } },
-}
+fn bool SlhDsaKeyPair.eq(&self, SlhDsaKeyPair other) @operator(==) => member_eq(*self, other);
 
 <*
  NOTE: Per specification requirements, a random number generator with a strength of _at least_ `8N` bits _must_ be used.
 
- @require @in(N, 16, 24, 32) : "The SLH-DSA 'n' value must be a supported integer length (16, 24, or 32 bytes)."
+ @require @in(NODE_BITS, 128, 192, 256) : "The SLH-DSA 'n' value must be a supported integer length (128, 192, or 256 bits)."
  @require $typeof(HASH_TYPE) == SlhDsaHashType : "`HASH_TYPE` must be a valid value from the `SlhDsaHashType` enum."
  @require $typeof(MODE) == SlhDsaMode : "`MODE` must be a valid value from the `SlhDsaMode` enum."
 *>
-module std::crypto::slh_dsa <N, HASH_TYPE, MODE>;
+module std::crypto::slh_dsa <NODE_BITS, HASH_TYPE, MODE> @private;
 
-import std::crypto, std::hash;
+import std::math, std::crypto, std::hash;
+
+<* The tree-node size `N` in bytes. *>
+const sz NODE_BYTES @local = NODE_BITS >> 3;
+
+<* The compile-time parameter set selected based on the generic module parameters. *>
+const PARAMS = select_params(NODE_BYTES, MODE);
+
+alias Node = SlhDsaNode{NODE_BITS};
+alias PrivateKey = SlhDsaPrivateKey{NODE_BITS};
+alias PublicKey = SlhDsaPublicKey{NODE_BITS};
+alias KeyPair = SlhDsaKeyPair{NODE_BITS};
+
+<*
+ Algorithm 21.
+*>
+fn KeyPair? keygen() @public
+{
+	PrivateKey privkey;
+	PublicKey pubkey;
+	entropy::fill(privkey.seed[..])!;
+	entropy::fill(privkey.prf[..])!;
+	entropy::fill(pubkey.seed[..])!;
+	return keygen_internal(privkey.seed, privkey.prf, pubkey.seed);
+}
 
 <*
  Algorithm 22.
 
  @require context.len <= 255 : "The `context` byte-string has a maximum length of 255 bytes."
 
- @return? entropy::SECURE_RANDOM_UNAVAILABLE : "The cryptographically-secure PRNG is not available. You may need to set `hedged` to `false` to continue."
+ @return? entropy::SECURE_RANDOM_UNAVAILABLE
+ 	: "The cryptographically-secure PRNG is not available. You can either set `hedged` to `false`, or provide your own `additional_randomness` to continue."
 *>
-fn char[]? sign(Allocator allocator, SlhDsaPrivateKey{N << 3} privkey, char[] message, char[] context = {},
-	bool hedged = true, SlhDsaNode{N} additional_randomness = {}) => @pool()
+fn char[]? sign(Allocator allocator, PrivateKey privkey, char[] message, char[] context = {},
+	bool hedged = true, Node additional_randomness = {}) @public => @pool()
 {
 	char[] res = alloc::new_array(allocator, char, SlhDsaSignature.sizeof);
-	if (hedged && additional_randomness == (SlhDsaNode{N}){}) entropy::fill(additional_randomness[..])!;
+	if (hedged && additional_randomness == (Node){}) entropy::fill(additional_randomness[..])!;
 	char[] message_p = alloc::alloc_array(tmem, char, 1 + 1 + context.len + message.len);
 	message_p[0] = 0;
 	message_p[1] = (char)context.len;
@@ -317,16 +325,17 @@ fn char[]? sign(Allocator allocator, SlhDsaPrivateKey{N << 3} privkey, char[] me
 
  @require context.len <= 255 : "The `context` byte-string has a maximum length of 255 bytes."
 
- @return? entropy::SECURE_RANDOM_UNAVAILABLE : "The cryptographically-secure PRNG is not available. You may need to set `hedged` to `false` to continue."
+ @return? entropy::SECURE_RANDOM_UNAVAILABLE
+ 	: "The cryptographically-secure PRNG is not available. You can either set `hedged` to `false`, or provide your own `additional_randomness` to continue."
  @return? NOT_FOUND : "The pre-hash type is not valid."
 *>
-fn char[]? hash_sign(Allocator allocator, SlhDsaPrivateKey{N << 3} privkey, char[] message, SlhDsaPreHashType pre_hash,
-	char[] context = {}, bool hedged = true, SlhDsaNode{N} additional_randomness = {}) => @pool()
+fn char[]? hash_sign(Allocator allocator, PrivateKey privkey, char[] message, SlhDsaPreHashType pre_hash,
+	char[] context = {}, bool hedged = true, Node additional_randomness = {}) @public => @pool()
 {
 	char[64] tmp_hash;
 	char[] hash;
 	char[] res = alloc::alloc_array(allocator, char, SlhDsaSignature.sizeof);
-	if (hedged && additional_randomness == (SlhDsaNode{N}){}) entropy::fill(additional_randomness[..])!;
+	if (hedged && additional_randomness == (Node){}) entropy::fill(additional_randomness[..])!;
 	switch (pre_hash)
 	{
 		case SHA256:
@@ -357,12 +366,12 @@ fn char[]? hash_sign(Allocator allocator, SlhDsaPrivateKey{N << 3} privkey, char
 <*
  Algorithm 24.
 *>
-macro bool verify(char[] message, SlhDsaSignature sig, SlhDsaPublicKey{N << 3} pubkey, char[] context = {}) => @pool()
+fn bool verify(char[] message, SlhDsaSignature sig, PublicKey pubkey, char[] context = {}) @public => @pool()
 {
 	if (context.len > 255) return false;   // any `context` string over 255 bytes is automatically invalid
 	char[] message_p = alloc::alloc_array(tmem, char, 1 + 1 + context.len + message.len);
 	message_p[0] = 0;
-	message_p[1] = context.len;
+	message_p[1] = (char)context.len;
 	message_p[2 : context.len] = context[..];
 	message_p[2 + context.len ..] = message[..];
 	return verify_internal(message_p, sig, pubkey);
@@ -373,7 +382,7 @@ macro bool verify(char[] message, SlhDsaSignature sig, SlhDsaPublicKey{N << 3} p
 
  @return? NOT_FOUND : "The pre-hash type is not valid."
 *>
-macro bool hash_verify(char[] message, SlhDsaPreHashType pre_hash, SlhDsaSignature sig, SlhDsaPublicKey{N << 3} pubkey, char[] context = {}) => @pool()
+fn bool? hash_verify(char[] message, SlhDsaPreHashType pre_hash, SlhDsaSignature sig, PublicKey pubkey, char[] context = {}) @public => @pool()
 {
 	if (context.len > 255) return false;   // any `context` string over 255 bytes is automatically invalid
 	char[64] tmp_hash;
@@ -384,7 +393,7 @@ macro bool hash_verify(char[] message, SlhDsaPreHashType pre_hash, SlhDsaSignatu
 			tmp_hash[:32] = sha256::hash(message)[..];
 			hash = tmp_hash[:32];
 		case SHA512:
-			tmp_hash[:32] = sha512::hash(message)[..];
+			tmp_hash[:64] = sha512::hash(message)[..];
 			hash = tmp_hash[:64];
 		case SHAKE128:
 			shake::xof_into(128, tmp_hash[:32], message);
@@ -396,34 +405,19 @@ macro bool hash_verify(char[] message, SlhDsaPreHashType pre_hash, SlhDsaSignatu
 	}
 	char[] message_p = alloc::alloc_array(tmem, char, 1 + 1 + context.len + 11 + hash.len);
 	message_p[0] = 1;
-	message_p[1] = context.len;
+	message_p[1] = (char)context.len;
 	message_p[2 : context.len] = context[..];
 	message_p[2 + context.len : 11] = @as_char_view(pre_hash.oid)[^11..];
 	message_p[2 + context.len + 11 ..] = hash[..];
 	return verify_internal(message_p, sig, pubkey);
 }
 
-
-<*
- NOTE: Per specification requirements, a random number generator with a strength of _at least_ `8N` bits _must_ be used.
-
- @require @in(N, 16, 24, 32) : "The SLH-DSA 'n' value must be a supported integer length (16, 24, or 32 bytes)."
- @require $typeof(HASH_TYPE) == SlhDsaHashType : "`HASH_TYPE` must be a valid value from the `SlhDsaHashType` enum."
- @require $typeof(MODE) == SlhDsaMode : "`MODE` must be a valid value from the `SlhDsaMode` enum."
-*>
-module std::crypto::slh_dsa <N, HASH_TYPE, MODE> @private;
-
-import std::math, std::crypto::shake;
-
-<* The compile-time parameter set selected based on the generic module parameters. *>
-const PARAMS = select_params(N, MODE);
-
 <*
  Used to generate the secret values for WOTS+ and FORS private keys.
 *>
-fn SlhDsaNode{N} prf(SlhDsaNode{N} pubkey_seed, SlhDsaNode{N} privkey_seed, SlhDsaAddress* adrs)
+fn Node prf(Node pubkey_seed, Node privkey_seed, SlhDsaAddress* adrs)
 {
-	SlhDsaNode{N} result;
+	Node result;
 	$if HASH_TYPE == SHAKE:
 		Shake256 s;
 		s.init();
@@ -441,9 +435,9 @@ fn SlhDsaNode{N} prf(SlhDsaNode{N} pubkey_seed, SlhDsaNode{N} privkey_seed, SlhD
  Pseudorandom function which generates the randomizer (`R`) for the randomized hashing
  of the signed message.
 *>
-fn SlhDsaNode{N} prf_msg(SlhDsaNode{N} privkey_prf, SlhDsaNode{N} opt_rand, char[] message)
+fn Node prf_msg(Node privkey_prf, Node opt_rand, char[] message)
 {
-	SlhDsaNode{N} result;
+	Node result;
 	$if HASH_TYPE == SHAKE:
 		Shake256 s;
 		s.init();
@@ -460,7 +454,7 @@ fn SlhDsaNode{N} prf_msg(SlhDsaNode{N} privkey_prf, SlhDsaNode{N} opt_rand, char
 <*
  Used to generate the digest of the message to be signed.
 *>
-fn char[PARAMS.m] hash_msg(SlhDsaNode{N} randomizer, SlhDsaPublicKey{N << 3} pubkey, char[] message)
+fn char[PARAMS.m] hash_msg(Node randomizer, PublicKey pubkey, char[] message)
 {
 	char[PARAMS.m] result;
 	$if HASH_TYPE == SHAKE:
@@ -480,9 +474,9 @@ fn char[PARAMS.m] hash_msg(SlhDsaNode{N} randomizer, SlhDsaPublicKey{N << 3} pub
 <*
  Common helper function for similar SHAKE operations with Tl, F, and H constructions.
 *>
-fn SlhDsaNode{N} _simple_shake(SlhDsaNode{N} pubkey_seed, SlhDsaAddress* adrs, char[] message)
+fn Node _simple_shake(Node pubkey_seed, SlhDsaAddress* adrs, char[] message)
 {
-	SlhDsaNode{N} res;
+	Node res;
 	Shake256 s;
 	s.init();
 	s.update(@as_char_view(pubkey_seed));
@@ -495,9 +489,9 @@ fn SlhDsaNode{N} _simple_shake(SlhDsaNode{N} pubkey_seed, SlhDsaAddress* adrs, c
 <*
  Hash function that maps an L-byte message to an N-byte message.
 
- @require message.len % N == 0 : "The `T` function requires the `message` length to be a multiple of `N`."
+ @require message.len % NODE_BYTES == 0 : "The `T` function requires the `message` length to be a multiple of `N`."
 *>
-fn SlhDsaNode{N} t(SlhDsaNode{N} pubkey_seed, SlhDsaAddress* adrs, char[] message)
+fn Node t(Node pubkey_seed, SlhDsaAddress* adrs, char[] message)
 {
 	$if HASH_TYPE == SHAKE:
 		return _simple_shake(pubkey_seed, adrs, message);
@@ -509,7 +503,7 @@ fn SlhDsaNode{N} t(SlhDsaNode{N} pubkey_seed, SlhDsaAddress* adrs, char[] messag
 <*
  Special case of Tl which takes an input byte string of exactly `2 * N` bytes in length.
 *>
-fn SlhDsaNode{N} h(SlhDsaNode{N} pubkey_seed, SlhDsaAddress* adrs, SlhDsaNode{N}[2] message)
+fn Node h(Node pubkey_seed, SlhDsaAddress* adrs, Node[2] message)
 {
 	$if HASH_TYPE == SHAKE:
 		return _simple_shake(pubkey_seed, adrs, @as_char_view(message));
@@ -521,7 +515,7 @@ fn SlhDsaNode{N} h(SlhDsaNode{N} pubkey_seed, SlhDsaAddress* adrs, SlhDsaNode{N}
 <*
  Hash function that maps an N-byte input to a different N-byte output.
 *>
-fn SlhDsaNode{N} f(SlhDsaNode{N} pubkey_seed, SlhDsaAddress* adrs, SlhDsaNode{N} message)
+fn Node f(Node pubkey_seed, SlhDsaAddress* adrs, Node message)
 {
 	$if HASH_TYPE == SHAKE:
 		return _simple_shake(pubkey_seed, adrs, @as_char_view(message));
@@ -540,16 +534,16 @@ fn SlhDsaNode{N} f(SlhDsaNode{N} pubkey_seed, SlhDsaAddress* adrs, SlhDsaNode{N}
 // In all approved parameter sets for SLH-DSA, lg_w is always set to 4. This allows us to make precalculations.
 const uint WOTS_W = 16;
 const uint WOTS_LG_W = 4;
-const uint WOTS_LEN1 = 2 * N;
+const uint WOTS_LEN1 = 2 * NODE_BYTES;
 const uint WOTS_LEN2 = 3;
 const uint WOTS_LEN = WOTS_LEN1 + WOTS_LEN2;
 
 <*
  Algorithm 5.
 *>
-fn SlhDsaNode{N} chain(SlhDsaNode{N} input, uint128 index, uint128 steps, SlhDsaPublicKey{N << 3} pubkey, SlhDsaAddress* adrs) => @pool()
+fn Node chain(Node input, uint128 index, uint128 steps, PublicKey pubkey, SlhDsaAddress* adrs) => @pool()
 {
-	SlhDsaNode{N} tmp = input;
+	Node tmp = input;
 	for (uint128 j = index; j < index + steps; j++)
 	{
 		adrs.set_hash_address(j);
@@ -561,16 +555,16 @@ fn SlhDsaNode{N} chain(SlhDsaNode{N} input, uint128 index, uint128 steps, SlhDsa
 <*
  Algorithm 6.
 *>
-fn SlhDsaNode{N} wots_pk_gen(SlhDsaPrivateKey{N << 3} privkey, SlhDsaAddress* adrs)
+fn Node wots_pk_gen(PrivateKey privkey, SlhDsaAddress* adrs)
 {
 	SlhDsaAddress sk_adrs = *adrs;
 	sk_adrs.set_type_and_clear(WOTS_PRF);
 	sk_adrs.set_key_pair_address(adrs.get_key_pair_address());
-	SlhDsaNode{N}[WOTS_LEN] chains;
+	Node[WOTS_LEN] chains;
 	for (uint i = 0; i < WOTS_LEN; i++)
 	{
 		sk_adrs.set_chain_address(i);
-		SlhDsaNode{N} sk = prf(privkey.pub.seed, privkey.seed, &sk_adrs);
+		Node sk = prf(privkey.pub.seed, privkey.seed, &sk_adrs);
 		adrs.set_chain_address(i);
 		chains[i] = chain(sk, 0, WOTS_W - 1, privkey.pub, adrs);
 	}
@@ -583,9 +577,9 @@ fn SlhDsaNode{N} wots_pk_gen(SlhDsaPrivateKey{N << 3} privkey, SlhDsaAddress* ad
 <*
  Algorithm 7.
 *>
-fn SlhDsaNode{N}[WOTS_LEN] wots_sign(SlhDsaNode{N} m, SlhDsaPrivateKey{N << 3} privkey, SlhDsaAddress* adrs)
+fn Node[WOTS_LEN] wots_sign(Node m, PrivateKey privkey, SlhDsaAddress* adrs)
 {
-	SlhDsaNode{N}[WOTS_LEN] sig;
+	Node[WOTS_LEN] sig;
 	uint128 csum;
 	uint128[WOTS_LEN] msg;
 	msg[:WOTS_LEN1] = base_2b(m[..], WOTS_LG_W, WOTS_LEN1)[..];
@@ -598,7 +592,7 @@ fn SlhDsaNode{N}[WOTS_LEN] wots_sign(SlhDsaNode{N} m, SlhDsaPrivateKey{N << 3} p
 	for (uint i = 0; i < WOTS_LEN; i++)
 	{
 		sk_adrs.set_chain_address(i);
-		SlhDsaNode{N} sk = prf(privkey.pub.seed, privkey.seed, &sk_adrs);
+		Node sk = prf(privkey.pub.seed, privkey.seed, &sk_adrs);
 		adrs.set_chain_address(i);
 		sig[i] = chain(sk, 0, msg[i], privkey.pub, adrs);
 	}
@@ -608,9 +602,9 @@ fn SlhDsaNode{N}[WOTS_LEN] wots_sign(SlhDsaNode{N} m, SlhDsaPrivateKey{N << 3} p
 <*
  Algorithm 8.
 *>
-fn SlhDsaNode{N} wots_pk_from_sig(SlhDsaNode{N}[WOTS_LEN] sig, SlhDsaNode{N} m, SlhDsaPublicKey{N << 3} pubkey, SlhDsaAddress* adrs)
+fn Node wots_pk_from_sig(Node[WOTS_LEN] sig, Node m, PublicKey pubkey, SlhDsaAddress* adrs)
 {
-	SlhDsaNode{N}[WOTS_LEN] tmp;
+	Node[WOTS_LEN] tmp;
 	uint128 csum;
 	uint128[WOTS_LEN] msg;
 	msg[:WOTS_LEN1] = base_2b(m[..], WOTS_LG_W, WOTS_LEN1)[..];
@@ -646,15 +640,15 @@ fn SlhDsaNode{N} wots_pk_from_sig(SlhDsaNode{N}[WOTS_LEN] sig, SlhDsaNode{N} m, 
 
 struct XmssSignature @packed
 {
-	SlhDsaNode{N}[WOTS_LEN] wots;
-	SlhDsaNode{N}[PARAMS.hp] auth_path;
+	Node[WOTS_LEN] wots;
+	Node[PARAMS.hp] auth_path;
 }
 fn bool XmssSignature.eq(&self, XmssSignature other) @operator(==) => member_eq(*self, other);
 
 <*
  Algorithm 9.
 *>
-fn SlhDsaNode{N} xmss_node(SlhDsaPrivateKey{N << 3} privkey, uint128 node_index, uint128 node_height, SlhDsaAddress* adrs)
+fn Node xmss_node(PrivateKey privkey, uint128 node_index, uint128 node_height, SlhDsaAddress* adrs)
 {
 	if (node_height == 0)
 	{
@@ -662,18 +656,18 @@ fn SlhDsaNode{N} xmss_node(SlhDsaPrivateKey{N << 3} privkey, uint128 node_index,
 		adrs.set_key_pair_address(node_index);
 		return wots_pk_gen(privkey, adrs);
 	}
-	SlhDsaNode{N} left  = xmss_node(privkey, 2 * node_index, node_height - 1, adrs);
-	SlhDsaNode{N} right = xmss_node(privkey, 2 * node_index + 1, node_height - 1, adrs);
+	Node left  = xmss_node(privkey, 2 * node_index, node_height - 1, adrs);
+	Node right = xmss_node(privkey, 2 * node_index + 1, node_height - 1, adrs);
 	adrs.set_type_and_clear(TREE);
 	adrs.set_tree_height(node_height);
 	adrs.set_tree_index(node_index);
-	return h(privkey.pub.seed, adrs, (SlhDsaNode{N}[2]){ left, right });
+	return h(privkey.pub.seed, adrs, (Node[2]){ left, right });
 }
 
 <*
  Algorithm 10.
 *>
-fn XmssSignature xmss_sign(SlhDsaNode{N} m, SlhDsaPrivateKey{N << 3} privkey, uint128 index, SlhDsaAddress* adrs)
+fn XmssSignature xmss_sign(Node m, PrivateKey privkey, uint128 index, SlhDsaAddress* adrs)
 {
 	XmssSignature sig;
 	for (uint j = 0; j < PARAMS.hp; j++)
@@ -690,11 +684,11 @@ fn XmssSignature xmss_sign(SlhDsaNode{N} m, SlhDsaPrivateKey{N << 3} privkey, ui
 <*
  Algorithm 11.
 *>
-fn SlhDsaNode{N} xmss_pk_from_sig(uint128 index, XmssSignature sig, SlhDsaNode{N} m, SlhDsaPublicKey{N << 3} pubkey, SlhDsaAddress* adrs)
+fn Node xmss_pk_from_sig(uint128 index, XmssSignature sig, Node m, PublicKey pubkey, SlhDsaAddress* adrs)
 {
 	adrs.set_type_and_clear(WOTS_HASH);
 	adrs.set_key_pair_address(index);
-	SlhDsaNode{N} res = wots_pk_from_sig(sig.wots, m, pubkey, adrs);
+	Node res = wots_pk_from_sig(sig.wots, m, pubkey, adrs);
 	adrs.set_type_and_clear(TREE);
 	adrs.set_tree_index(index);
 	for (uint k = 0; k < PARAMS.hp; k++)
@@ -703,12 +697,12 @@ fn SlhDsaNode{N} xmss_pk_from_sig(uint128 index, XmssSignature sig, SlhDsaNode{N
 		if ((uint128)math::floor(index / math::pow(2, k)) % 2 == 0)
 		{
 			adrs.set_tree_index(adrs.get_tree_index() / 2);
-			res = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ res, sig.auth_path[k] });
+			res = h(pubkey.seed, adrs, (Node[2]){ res, sig.auth_path[k] });
 		}
 		else
 		{
 			adrs.set_tree_index((adrs.get_tree_index() - 1) / 2);
-			res = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ sig.auth_path[k], res });
+			res = h(pubkey.seed, adrs, (Node[2]){ sig.auth_path[k], res });
 		}
 	}
 	return res;
@@ -722,7 +716,7 @@ fn SlhDsaNode{N} xmss_pk_from_sig(uint128 index, XmssSignature sig, SlhDsaNode{N
 //
 
 <* A hypertree signature consists of `d` XMSS signatures, from lowest to uppermost. *>
-const uint HYPERTREE_SIGNATURE_LEN = (PARAMS.h + (PARAMS.d * WOTS_LEN)) * N;   // alt: PARAMS.d * XmssSignature.sizeof
+const uint HYPERTREE_SIGNATURE_LEN = (PARAMS.h + (PARAMS.d * WOTS_LEN)) * NODE_BYTES;   // alt: PARAMS.d * XmssSignature.sizeof
 
 struct HypertreeSignature @packed
 {
@@ -733,13 +727,13 @@ fn bool HypertreeSignature.eq(&self, HypertreeSignature other) @operator(==) => 
 <*
  Algorithm 12.
 *>
-fn HypertreeSignature ht_sign(SlhDsaNode{N} m, SlhDsaPrivateKey{N << 3} privkey, uint128 index_tree, uint128 index_leaf)
+fn HypertreeSignature ht_sign(Node m, PrivateKey privkey, uint128 index_tree, uint128 index_leaf)
 {
 	HypertreeSignature sig;
 	SlhDsaAddress adrs;
 	adrs.set_tree_address(index_tree);
 	sig.xmss_sigs[0] = xmss_sign(m, privkey, index_leaf, &adrs);
-	SlhDsaNode{N} root = xmss_pk_from_sig(index_leaf, sig.xmss_sigs[0], m, privkey.pub, &adrs);
+	Node root = xmss_pk_from_sig(index_leaf, sig.xmss_sigs[0], m, privkey.pub, &adrs);
 	for (uint j = 1; j < PARAMS.d; j++)
 	{
 		index_leaf = index_tree % (uint128)math::pow(2, PARAMS.hp);
@@ -758,11 +752,11 @@ fn HypertreeSignature ht_sign(SlhDsaNode{N} m, SlhDsaPrivateKey{N << 3} privkey,
 <*
  Algorithm 13.
 *>
-fn bool ht_verify(SlhDsaNode{N} m, HypertreeSignature sig, SlhDsaPublicKey{N << 3} pubkey, uint128 index_tree, uint128 index_leaf)
+fn bool ht_verify(Node m, HypertreeSignature sig, PublicKey pubkey, uint128 index_tree, uint128 index_leaf)
 {
 	SlhDsaAddress adrs;
 	adrs.set_tree_address(index_tree);
-	SlhDsaNode{N} node = xmss_pk_from_sig(index_leaf, sig.xmss_sigs[0], m, pubkey, &adrs);
+	Node node = xmss_pk_from_sig(index_leaf, sig.xmss_sigs[0], m, pubkey, &adrs);
 	for (uint j = 1; j < PARAMS.d; j++)
 	{
 		index_leaf = index_tree % (uint128)math::pow(2, PARAMS.hp);
@@ -787,8 +781,8 @@ const uint FORS_DIGEST_LEN = @ct_ceil((PARAMS.a * PARAMS.k) / 8.0);
 
 struct ForsPrivateSet @packed
 {
-	SlhDsaNode{N} private_key;
-	SlhDsaNode{N}[PARAMS.a] auth_path;
+	Node private_key;
+	Node[PARAMS.a] auth_path;
 }
 fn bool ForsPrivateSet.eq(&self, ForsPrivateSet other) @operator(==) => member_eq(*self, other);
 
@@ -801,7 +795,7 @@ fn bool ForsSignature.eq(&self, ForsSignature other) @operator(==) => member_eq(
 <*
  Algorithm 14.
 *>
-fn SlhDsaNode{N} fors_sk_gen(SlhDsaPrivateKey{N << 3} privkey, SlhDsaAddress* adrs, uint128 index)
+fn Node fors_sk_gen(PrivateKey privkey, SlhDsaAddress* adrs, uint128 index)
 {
 	SlhDsaAddress sk_adrs = *adrs;
 	sk_adrs.set_type_and_clear(FORS_PRF);
@@ -813,26 +807,26 @@ fn SlhDsaNode{N} fors_sk_gen(SlhDsaPrivateKey{N << 3} privkey, SlhDsaAddress* ad
 <*
  Algorithm 15.
 *>
-fn SlhDsaNode{N} fors_node(SlhDsaPrivateKey{N << 3} privkey, uint128 node_index, uint128 node_height, SlhDsaAddress* adrs)
+fn Node fors_node(PrivateKey privkey, uint128 node_index, uint128 node_height, SlhDsaAddress* adrs)
 {
 	if (node_height == 0)
 	{
-		SlhDsaNode{N} sk = fors_sk_gen(privkey, adrs, node_index);
+		Node sk = fors_sk_gen(privkey, adrs, node_index);
 		adrs.set_tree_height(0);
 		adrs.set_tree_index(node_index);
 		return f(privkey.pub.seed, adrs, sk);
 	}
-	SlhDsaNode{N} left  = fors_node(privkey, 2 * node_index, node_height - 1, adrs);
-	SlhDsaNode{N} right = fors_node(privkey, 2 * node_index + 1, node_height - 1, adrs);
+	Node left  = fors_node(privkey, 2 * node_index, node_height - 1, adrs);
+	Node right = fors_node(privkey, 2 * node_index + 1, node_height - 1, adrs);
 	adrs.set_tree_height(node_height);
 	adrs.set_tree_index(node_index);
-	return h(privkey.pub.seed, adrs, (SlhDsaNode{N}[2]){ left, right });
+	return h(privkey.pub.seed, adrs, (Node[2]){ left, right });
 }
 
 <*
  Algorithm 16.
 *>
-fn ForsSignature fors_sign(char[FORS_DIGEST_LEN] md, SlhDsaPrivateKey{N << 3} privkey, SlhDsaAddress* adrs)
+fn ForsSignature fors_sign(char[FORS_DIGEST_LEN] md, PrivateKey privkey, SlhDsaAddress* adrs)
 {
 	ForsSignature sig;
 	uint128[PARAMS.k] indices = base_2b(md[..], PARAMS.a, PARAMS.k);
@@ -851,10 +845,10 @@ fn ForsSignature fors_sign(char[FORS_DIGEST_LEN] md, SlhDsaPrivateKey{N << 3} pr
 <*
  Algorithm 17.
 *>
-fn SlhDsaNode{N} fors_pk_from_sig(ForsSignature sig, char[FORS_DIGEST_LEN] md, SlhDsaPublicKey{N << 3} pubkey, SlhDsaAddress* adrs)
+fn Node fors_pk_from_sig(ForsSignature sig, char[FORS_DIGEST_LEN] md, PublicKey pubkey, SlhDsaAddress* adrs)
 {
-	SlhDsaNode{N}[PARAMS.k] roots;
-	SlhDsaNode{N} tmp;
+	Node[PARAMS.k] roots;
+	Node tmp;
 	uint128[PARAMS.k] indices = base_2b(md[..], PARAMS.a, PARAMS.k);
 	for (uint i = 0; i < PARAMS.k; i++)
 	{
@@ -867,12 +861,12 @@ fn SlhDsaNode{N} fors_pk_from_sig(ForsSignature sig, char[FORS_DIGEST_LEN] md, S
 			if ((uint128)math::floor(indices[i] / (double)math::pow(2, j)) % 2 == 0)
 			{
 				adrs.set_tree_index(adrs.get_tree_index() / 2);
-				roots[i] = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ roots[i], sig.keys[i].auth_path[j] });
+				roots[i] = h(pubkey.seed, adrs, (Node[2]){ roots[i], sig.keys[i].auth_path[j] });
 			}
 			else
 			{
 				adrs.set_tree_index((adrs.get_tree_index() - 1) / 2);
-				roots[i] = h(pubkey.seed, adrs, (SlhDsaNode{N}[2]){ sig.keys[i].auth_path[j], roots[i] });
+				roots[i] = h(pubkey.seed, adrs, (Node[2]){ sig.keys[i].auth_path[j], roots[i] });
 			}
 		}
 	}
@@ -889,11 +883,9 @@ fn SlhDsaNode{N} fors_pk_from_sig(ForsSignature sig, char[FORS_DIGEST_LEN] md, S
 // INTERNAL FUNCTIONS (Section 9)
 //
 
-import std::collections::pair;   // TODO: do not return a Pair - this is temporary while refactoring
-
 struct SlhDsaSignature @packed
 {
-	SlhDsaNode{N} randomness;
+	Node randomness;
 	ForsSignature fors_sig;
 	HypertreeSignature ht_sig;
 }
@@ -902,10 +894,10 @@ fn bool SlhDsaSignature.eq(&self, SlhDsaSignature other) @operator(==) => member
 <*
  Algorithm 18.
 *>
-fn SlhDsaKeyPair{N << 3} keygen_internal(SlhDsaNode{N} sk_seed, SlhDsaNode{N} sk_prf, SlhDsaNode{N} pk_seed)
+fn KeyPair keygen_internal(Node sk_seed, Node sk_prf, Node pk_seed)
 {
-	SlhDsaPublicKey{N << 3} pubkey = { .seed = pk_seed };
-	SlhDsaPrivateKey{N << 3} privkey = { .seed = sk_seed, .prf = sk_prf };
+	PublicKey pubkey = { .seed = pk_seed };
+	PrivateKey privkey = { .seed = sk_seed, .prf = sk_prf };
 	SlhDsaAddress adrs;
 	adrs.set_layer_address(PARAMS.d - 1);
 	pubkey.root = xmss_node(privkey, 0, PARAMS.hp, &adrs);
@@ -922,7 +914,7 @@ const uint LEAF_SPAN = @ct_ceil(PARAMS.h / (8.0 * PARAMS.d));
 
  @require !hedged || (hedged && addrnd != {}) : "When using the hedged variant of SLH-DSA, you _must_ generate `N` random bytes for `addrnd`."
 *>
-fn SlhDsaSignature sign_internal(char[] message, SlhDsaPrivateKey{N << 3} privkey, SlhDsaNode{N} addrnd = {}, bool hedged = true)
+fn SlhDsaSignature sign_internal(char[] message, PrivateKey privkey, Node addrnd = {}, bool hedged = true)
 {
 	SlhDsaSignature sig;
 	SlhDsaAddress adrs;
@@ -936,7 +928,7 @@ fn SlhDsaSignature sign_internal(char[] message, SlhDsaPrivateKey{N << 3} privke
 	adrs.set_type_and_clear(FORS_TREE);
 	adrs.set_key_pair_address(index_leaf);
 	sig.fors_sig = fors_sign(md[:DIGEST_SPAN], privkey, &adrs);
-	SlhDsaNode{N} pk_fors = fors_pk_from_sig(sig.fors_sig, md[:DIGEST_SPAN], privkey.pub, &adrs);
+	Node pk_fors = fors_pk_from_sig(sig.fors_sig, md[:DIGEST_SPAN], privkey.pub, &adrs);
 	sig.ht_sig = ht_sign(pk_fors, privkey, index_tree, index_leaf);
 	return sig;
 }
@@ -944,7 +936,7 @@ fn SlhDsaSignature sign_internal(char[] message, SlhDsaPrivateKey{N << 3} privke
 <*
  Algorithm 20.
 *>
-fn bool verify_internal(char[] message, SlhDsaSignature sig, SlhDsaPublicKey{N << 3} pubkey)
+fn bool verify_internal(char[] message, SlhDsaSignature sig, PublicKey pubkey)
 {
 	if (message.len != PARAMS.signature_len) return false;
 	SlhDsaAddress adrs;
@@ -955,6 +947,6 @@ fn bool verify_internal(char[] message, SlhDsaSignature sig, SlhDsaPublicKey{N <
 	adrs.set_tree_address(index_tree);
 	adrs.set_type_and_clear(FORS_TREE);
 	adrs.set_key_pair_address(index_leaf);
-	SlhDsaNode{N} pk_fors = fors_pk_from_sig(sig.fors_sig, md[:DIGEST_SPAN], pubkey, &adrs);
+	Node pk_fors = fors_pk_from_sig(sig.fors_sig, md[:DIGEST_SPAN], pubkey, &adrs);
 	return ht_verify(pk_fors, sig.ht_sig, pubkey, index_tree, index_leaf);
 }
