@@ -25,11 +25,15 @@
 - Make $sizeof, $alignof and all similar functions return `sz` instead of `usz`.
 - Align literal types with C semantics.
 - Use value promotion instead of signedness promotion to int. So that small unsigned types promote to int, not uint.
-
+- Add a `@mustinit` attribute to enforce zero-initialization of a type. #3094
+- Improve error message when keyword is used instead of an expression. #3088
+ 
 ### Stdlib changes
 - `std::collections::RingBuffer` is renamed `RingList`.
 - Add `List.remove_unordered_at`.
 - PanicFn now takes an `int` for row.
+- Add `std::collections::Deque`.
+- Add `compare_to` and `compare_to_ignore_case` to `String`. #3096
 
 ### Fixes
 - Slice comparison lowering would not work correctly in macros in some cases. #3095
