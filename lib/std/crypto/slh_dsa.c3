@@ -8,8 +8,6 @@ module std::crypto::slh_dsa;
 
 // TODO: Remove after added to STDLIB
 import std::crypto::shake;
-alias Shake128 = Shake{128};
-alias Shake256 = Shake{256};
 
 enum SlhDsaHashType
 {
@@ -419,7 +417,7 @@ fn Node prf(Node pubkey_seed, Node privkey_seed, SlhDsaAddress* adrs)
 {
 	Node result;
 	$if HASH_TYPE == SHAKE:
-		Shake256 s;
+		Shake{256} s;
 		s.init();
 		s.update(@as_char_view(pubkey_seed));
 		s.update(@as_char_view(*adrs));
@@ -439,7 +437,7 @@ fn Node prf_msg(Node privkey_prf, Node opt_rand, char[] message)
 {
 	Node result;
 	$if HASH_TYPE == SHAKE:
-		Shake256 s;
+		Shake{256} s;
 		s.init();
 		s.update(@as_char_view(privkey_prf));
 		s.update(@as_char_view(opt_rand));
@@ -458,7 +456,7 @@ fn char[PARAMS.m] hash_msg(Node randomizer, PublicKey pubkey, char[] message)
 {
 	char[PARAMS.m] result;
 	$if HASH_TYPE == SHAKE:
-		Shake256 s;
+		Shake{256} s;
 		s.init();
 		s.update(@as_char_view(randomizer));
 		s.update(@as_char_view(pubkey.seed));
@@ -477,7 +475,7 @@ fn char[PARAMS.m] hash_msg(Node randomizer, PublicKey pubkey, char[] message)
 fn Node _simple_shake(Node pubkey_seed, SlhDsaAddress* adrs, char[] message)
 {
 	Node res;
-	Shake256 s;
+	Shake{256} s;
 	s.init();
 	s.update(@as_char_view(pubkey_seed));
 	s.update(@as_char_view(*adrs));
