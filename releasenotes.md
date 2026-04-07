@@ -27,17 +27,27 @@
 - Use value promotion instead of signedness promotion to int. So that small unsigned types promote to int, not uint.
 - Add a `@mustinit` attribute to enforce zero-initialization of a type. #3094
 - Improve error message when keyword is used instead of an expression. #3088
- 
+- Add `--warn-recursivecontracts`.
+- Mutex.destroy and friends no longer return optionals.
+- Remove `@operator(!=)` overload.
+- Add `@operator(<)` overload, enabling type comparison overloads.
+
 ### Stdlib changes
 - `std::collections::RingBuffer` is renamed `RingList`.
 - Add `List.remove_unordered_at`.
 - PanicFn now takes an `int` for row.
 - Add `std::collections::Deque`.
 - Add `compare_to` and `compare_to_ignore_case` to `String`. #3096
+- Add `OrderedMap` based on skip lists.
 
 ### Fixes
 - Slice comparison lowering would not work correctly in macros in some cases. #3095
 - Attributes `@allow_deprecated`, `@constinit`, `@noalias`, `@nostrip`, and `@optional` would erroneously accept parameters. #3098
+- Fix pipe handle leaks across concurrent process spawns #10067.
+- `$$trap` was incorrectly marked noreturn.
+- Recursive inclusion of contracts was not detected.
+- `\r` was not filtered when piping a source file from stdin.
+- SHA-3 and Keccak contexts are now explicitly `@mustinit` structures. #3110
 
 ## 0.7.11 Change list
 
