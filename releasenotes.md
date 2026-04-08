@@ -31,14 +31,19 @@
 - Mutex.destroy and friends no longer return optionals.
 - Remove `@operator(!=)` overload.
 - Add `@operator(<)` overload, enabling type comparison overloads.
+- Generic inference can now look through pointer.
 
 ### Stdlib changes
-- `std::collections::RingBuffer` is renamed `RingList`.
+- `std::collections::RingBuffer` has been renamed `RingList`.
 - Add `List.remove_unordered_at`.
 - PanicFn now takes an `int` for row.
 - Add `std::collections::Deque`.
 - Add `compare_to` and `compare_to_ignore_case` to `String`. #3096
 - Add `OrderedMap` based on skip lists.
+- Add `OneShotChannel` to `std::thread::channel` for single-send/single-receive thread synchronization.
+- `BufferedChannel` and `UnbufferedChannel` now pointers, create using `create_unbuffered` and `create_buffered`
+- `RingList` now conforms to `foreach` and adds additional functions.
+- Ini parser and encoder.
 
 ### Fixes
 - Slice comparison lowering would not work correctly in macros in some cases. #3095
@@ -48,6 +53,7 @@
 - Recursive inclusion of contracts was not detected.
 - `\r` was not filtered when piping a source file from stdin.
 - SHA-3 and Keccak contexts are now explicitly `@mustinit` structures. #3110
+- `UnbufferedChannel` would deadlock on multiple producers.
 
 ## 0.7.11 Change list
 
