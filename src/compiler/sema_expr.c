@@ -27,7 +27,6 @@
 		UNREACHABLE \
 	} } while (0);
 
-static bool sema_may_subscript_or_access(SemaContext *context, Expr *expr, const char *fail_reason, bool *failed_ref);
 
 typedef struct
 {
@@ -40,6 +39,13 @@ typedef struct
 	Expr *struct_var;
 	Signature *signature;
 } CalledDecl;
+
+typedef struct
+{
+	bool in_no_eval;
+	InliningSpan *old_inlining;
+	Decl *generic_instance;
+} ContextSwitchState;
 
 // Properties
 static inline BuiltinFunction builtin_by_name(const char *name);
@@ -204,15 +210,10 @@ static bool sema_replace_with_overload(SemaContext *context, Expr *expr, Expr *l
 
 INLINE bool sema_expr_analyse_ptr_add(SemaContext *context, Expr *expr, Expr *left, Expr *right, CanonicalType *left_type, CanonicalType *right_type, Type *cast_to_iptr, bool *failed_ref);
 static Type *defer_iptr_cast(Expr *maybe_pointer);
+static bool sema_may_subscript_or_access(SemaContext *context, Expr *expr, const char *fail_reason, bool *failed_ref);
 
 // -- implementations
 
-typedef struct
-{
-	bool in_no_eval;
-	InliningSpan *old_inlining;
-	Decl *generic_instance;
-} ContextSwitchState;
 
 static inline ContextSwitchState context_switch_state_push(SemaContext *context, SemaContext *new_context)
 {
@@ -257,35 +258,6 @@ Expr *sema_enter_inline_member(Expr *parent, CanonicalType *type)
 			if (!decl->is_substruct) return NULL;
 			expr = expr_copy(parent);
 			expr->type = decl->enums.type_info->type;
-			return expr;
-		}
-		case TYPE_ENUM:
-		{
-			Decl *decl = type->decl;
-			if (!decl->is_substruct) return NULL;
-
-			if (parent->expr_kind == EXPR_CONST)
-			{
-				if (decl->enums.inline_value)
-				{
-					expr = expr_new_expr(EXPR_CONST, parent);
-					expr_rewrite_const_int(expr, decl->enums.type_info->type, parent->const_expr.enum_val->enum_constant.inner_ordinal);
-					return expr;
-				}
-				expr = copy_expr_single(parent->const_expr.enum_val->enum_constant.associated[decl->enums.inline_index]);
-				break;
-			}
-			if (decl->enums.inline_value)
-			{
-				expr = copy_expr_single(parent);
-				expr->type = type_add_optional(decl->enums.type_info->type, IS_OPTIONAL(parent));
-				break;
-			}
-			expr = expr_new(EXPR_ACCESS_RESOLVED, parent->loc);
-			expr->resolve_status = RESOLVE_DONE;
-			expr->access_resolved_expr.parent = parent;
-			expr->access_resolved_expr.ref = decl->enums.parameters[decl->enums.inline_value];
-			expr->type = expr->access_resolved_expr.ref->type;
 			break;
 		}
 		default:
@@ -295,31 +267,32 @@ Expr *sema_enter_inline_member(Expr *parent, CanonicalType *type)
 	return expr;
 }
 
+/*
+ * Analyse $vaarg[0], returning the expression inside.
+ *
+ * @return a poisoned expr if it fails
+ */
 Expr *sema_expr_analyse_ct_arg_index(SemaContext *context, Expr *index_expr, unsigned *index_ref)
 {
 	unsigned args = vec_size(context->macro_varargs);
 	if (!sema_analyse_expr_rvalue(context, index_expr)) return poisoned_expr;
 	if (!type_is_integer(index_expr->type))
 	{
-		SEMA_ERROR(index_expr, "Expected the argument index here, but found a value of type %s.", type_quoted_error_string(index_expr->type));
-		return poisoned_expr;
+		RETURN_VAL_SEMA_ERROR(poisoned_expr, index_expr, "Expected the argument index here, but found a value of type %s.", type_quoted_error_string(index_expr->type));
 	}
 	if (!sema_cast_const(index_expr))
 	{
-		SEMA_ERROR(index_expr, "Vararg functions need a constant argument, but this is a runtime value.");
-		return poisoned_expr;
+		RETURN_VAL_SEMA_ERROR(poisoned_expr, index_expr, "Vaarg functions need a constant argument, but this is a runtime value.");
 	}
 	Int index_val = index_expr->const_expr.ixx;
 	if (int_is_neg(index_val))
 	{
-		SEMA_ERROR(index_expr, "The index cannot be negative.");
-		return poisoned_expr;
+		RETURN_VAL_SEMA_ERROR(poisoned_expr, index_expr, "The index cannot be negative.");
 	}
 	Int int_max = { .i = { .low = args }, .type = TYPE_U32 };
 	if (int_comp(index_val, int_max, BINARYOP_GE))
 	{
-		SEMA_ERROR(index_expr, "Only %u vararg%s exist.", args, args == 1 ? "" : "s");
-		return poisoned_expr;
+		RETURN_VAL_SEMA_ERROR(poisoned_expr, index_expr, "Only %u vararg%s exist.", args, args == 1 ? "" : "s");
 	}
 	if (index_ref) *index_ref = (unsigned)index_val.i.low;
 	return context->macro_varargs[(size_t)index_val.i.low];
@@ -407,8 +380,6 @@ Expr *sema_ct_eval_expr(SemaContext *context, CtEvalKind eval_kind, Expr *inner,
 	{
 		switch (eval_kind)
 		{
-			case CT_EVAL_TYPE:
-				RETURN_VAL_SEMA_ERROR(poisoned_expr, inner, "'$evaltype' expects a constant string as the argument.");
 			case CT_EVAL_IDENTIFIER:
 				RETURN_VAL_SEMA_ERROR(poisoned_expr, inner, "'$eval' expects a constant string as the argument.");
 			case CT_EVAL_IMPLICIT_IDENTIFIER:

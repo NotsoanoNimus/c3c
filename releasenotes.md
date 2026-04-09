@@ -32,6 +32,9 @@
 - Remove `@operator(!=)` overload.
 - Add `@operator(<)` overload, enabling type comparison overloads.
 - Generic inference can now look through pointer.
+- Enums now implicitly convert to their ordinal when used as indices.
+- Enums can no longer declare themselves `inline`.
+- Nested generics allowed inside of generic functions/methods.
 
 ### Stdlib changes
 - `std::collections::RingBuffer` has been renamed `RingList`.
@@ -44,6 +47,7 @@
 - `BufferedChannel` and `UnbufferedChannel` now pointers, create using `create_unbuffered` and `create_buffered`
 - `RingList` now conforms to `foreach` and adds additional functions.
 - Ini parser and encoder.
+- Updated `ref::new` argument order.
 
 ### Fixes
 - Slice comparison lowering would not work correctly in macros in some cases. #3095
