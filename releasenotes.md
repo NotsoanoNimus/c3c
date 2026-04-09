@@ -35,6 +35,7 @@
 - Enums now implicitly convert to their ordinal when used as indices.
 - Enums can no longer declare themselves `inline`.
 - Nested generics allowed inside of generic functions/methods.
+- `a = ...` parameters may be shadowed if not defined.
 
 ### Stdlib changes
 - `std::collections::RingBuffer` has been renamed `RingList`.
@@ -48,6 +49,7 @@
 - `RingList` now conforms to `foreach` and adds additional functions.
 - Ini parser and encoder.
 - Updated `ref::new` argument order.
+- Support setting thread stack size.
 
 ### Fixes
 - Slice comparison lowering would not work correctly in macros in some cases. #3095
