@@ -293,6 +293,7 @@ static bool sema_resolve_type_identifier(SemaContext *context, TypeInfo *type_in
 		case DECL_CT_ASSERT:
 		case DECL_CT_ECHO:
 		case DECL_CT_EXEC:
+		case DECL_CT_EXPAND:
 		case DECL_CT_INCLUDE:
 		case DECL_DECLARRAY:
 		case DECL_GROUP:
@@ -596,6 +597,12 @@ APPEND_QUALIFIERS:;
 			type = type_get_slice(type);
 			break;
 	}
+	if (type->type_kind == TYPE_UNTYPEDLIST && type_info->optional)
+	{
+		SEMA_ERROR(type_info, "%s cannot be used as an optional type, since it is compile-time only.", type_quoted_error_string(type));
+		return type_info_poison(type_info);
+	}
+
 	type_info->type = type_add_optional(type, type_info->optional || type_is_optional(type_info->type));
 	type_info->resolve_status = RESOLVE_DONE;
 	return true;

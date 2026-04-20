@@ -2,6 +2,8 @@
 // Use of this source code is governed by a LGPLv3.0
 // a copy of which can be found in the LICENSE file.
 
+#include <math.h>
+
 #include "compiler_internal.h"
 
 #define FLOAT32_LIMIT 340282346638528859811704183484516925440.0000000000000000
@@ -319,6 +321,7 @@ MISMATCH:
 			FALLTHROUGH;
 		case CONST_SLICE:
 		case CONST_UNTYPED_LIST:
+		case CONST_REFLECTION:
 			UNREACHABLE;
 		case CONST_MEMBER:
 			is_eq = left->member.decl == right->member.decl;
@@ -391,6 +394,7 @@ bool expr_const_will_overflow(const ExprConst *expr, TypeKind kind)
 		case CONST_INITIALIZER:
 		case CONST_UNTYPED_LIST:
 		case CONST_MEMBER:
+		case CONST_REFLECTION:
 		case CONST_REF:
 			UNREACHABLE
 	}
@@ -496,6 +500,11 @@ void expr_const_to_scratch_buffer(const ExprConst *expr)
 		case CONST_TYPEID:
 			scratch_buffer_append(expr->typeid->name);
 			return;
+		case CONST_REFLECTION:
+			scratch_buffer_append("mirror(");
+			scratch_buffer_append(span_to_string(expr->reflection->loc));
+			scratch_buffer_append(")");
+			return;
 		case CONST_MEMBER:
 			scratch_buffer_append(expr->member.decl->name);
 			return;
@@ -554,6 +563,8 @@ const char *expr_const_to_error_string(const ExprConst *expr)
 			return expr->enum_val->name;
 		case CONST_TYPEID:
 			return type_to_error_string(expr->typeid);
+		case CONST_REFLECTION:
+			return "reflection struct";
 		case CONST_MEMBER:
 			return "member";
 		case CONST_SLICE:

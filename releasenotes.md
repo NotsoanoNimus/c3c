@@ -34,10 +34,21 @@
 - Generic inference can now look through pointer.
 - Enums now implicitly convert to their ordinal when used as indices.
 - Enums can no longer declare themselves `inline`.
-- Nested generics allowed inside of generic functions/methods.
+- Nested generics allowed inside generic functions/methods.
 - `a = ...` parameters may be shadowed if not defined.
 - `$eval` can now be used with named parameters, e.g. `foo($eval("arg"): 2)` #3090
-- `$extnameof` / `.extnameof` is now renamed `$cnameof` / `.cnameof`.
+- Type properties are now accessed using `::` and the "of" suffix, removed: `int.sizeof` -> `int::size`
+- Added `$reflect` with properties `name`, `cname`, `qname`, `offset`, `alignment`, `size`.
+- Added `@kindof`, `@alignof` and `@sizeof` macros.
+- Removed `$nameof`, `$extnameof`, `$qnameof`, `$offsetof`, `$alignof`, `$kindof`, `$sizeof`.
+- `.nameof` is changed to `.description` on `fault` and enum types.
+- Type property `is_eq` is renamed `has_equals`.
+- Type function `tagof` is renamed `get_tag`.
+- Add `untypedlist` as a usable type #2647.
+- `??` and `?:` has new precedence and binds tighter than `+` and `-`
+- Added the `tags` property for types and `$reflect`.
+- Allow taking the type of an interface method.
+- Add `$expand` compile time function to convert strings to code.
 
 ### Stdlib changes
 - `std::collections::RingBuffer` has been renamed `RingList`.
@@ -60,6 +71,13 @@
 - Add `remove_unordered_at` to ElasticArray.
 - Changed `json` to support two flavors of JSON: JSON and JSONC.
 - Changed `json` API: `parse` -> `load`, `parse_string` -> `parse`.
+- `conv::detect_bom`, convert utf16/utf32 from bytes with byteswap / unaligned data.
+- Mergesort added.
+- `set_cursor` is renamed `seek`, and the old `seek` is removed.
+- `std::math` name changes: `HALF_PI` => `HALF_PI`, `QUARTER_PI` => `QUARTER_PI`, `DIV_PI` => `INV_PI` etc, `cosec` => `csc`, `cotan` => `cot`, `muladd` => `mad`
+- `std::time` name changes: `diff_hour` => `diff_hours`. `DateTime.set_date` => `DateTime.set`, `datetime::from_date_*` => `datetime::at_*`
+- `std::hash` method name convention changes: `updatec` / `update_char` => `update_byte`.
+- `std::string` name changes: `strip` => `strip_prefix`, `strip_end` => `strip_suffix`.
 
 ### Fixes
 - Slice comparison lowering would not work correctly in macros in some cases. #3095
@@ -75,6 +93,9 @@
 - Fix bug casting `(void*[<3>])x`.
 - Compiler crash compiling a switch with a constant case range overlapping a constant case value. #3127
 - Incorrect handling of overaligned struct fields #3136
+- EnumSet with more than 128 entries was broken.
+- Handle underflow in zip.
+- Bugs in check for name suggestions on name mismatch.
 
 ## 0.7.11 Change list
 

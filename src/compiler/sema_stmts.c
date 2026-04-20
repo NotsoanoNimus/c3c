@@ -799,9 +799,10 @@ static inline bool sema_expr_valid_try_expression(Expr *expr)
 		case EXPR_COND:
 		case EXPR_POISONED:
 		case EXPR_CT_ARG:
-		case EXPR_CT_CALL:
+		case EXPR_CT_FEATURE:
 		case EXPR_CT_DEFINED:
 		case EXPR_CT_EVAL:
+		case EXPR_CT_REFLECT:
 		case EXPR_CONTRACT:
 		case EXPR_NAMED_ARGUMENT:
 		case EXPR_NAMED_EVAL_ARGUMENT:
@@ -1557,7 +1558,7 @@ static inline bool sema_analyse_foreach_stmt(SemaContext *context, Ast *statemen
 
 	// We might have an untyped list, if we failed the conversion.
 	Type *canonical = enumerator->type->canonical;
-	if (canonical->type_kind == TYPE_UNTYPED_LIST)
+	if (canonical->type_kind == TYPE_UNTYPEDLIST)
 	{
 		if (variable_type_info || !iterator_was_initializer)
 		{
@@ -2865,6 +2866,7 @@ static inline bool sema_analyse_ct_foreach_stmt(SemaContext *context, Ast *state
 		case CONST_TYPEID:
 		case CONST_REF:
 		case CONST_MEMBER:
+    	case CONST_REFLECTION:
 			goto FAILED_NO_LIST;
 		case CONST_SLICE:
 			if (!collection->const_expr.slice_init)
@@ -3057,6 +3059,22 @@ bool sema_analyse_ct_assert_stmt(SemaContext *context, Ast *statement)
 	return true;
 }
 
+bool sema_analyse_ct_expand_stmt(SemaContext *context, Ast *stmt)
+{
+	Expr *string = stmt->expand_stmt;
+	if (!sema_analyse_ct_expr(context, string)) return false;
+	if (!expr_is_const_string(string)) RETURN_SEMA_ERROR(string, "Expected a constant string to '$expand'.");
+	scratch_buffer_clear();
+	SourceLoc* loc = sourcelocptr(string->loc);
+	scratch_buffer_printf("%s.%d", context->unit->file->full_path, loc->row, loc->col);
+	File *file = source_file_text_load(scratch_buffer_to_string(), str_copy(string->const_expr.bytes.ptr, string->const_expr.bytes.len));
+	Ast *result = parse_include_file_stmts(file, context->unit);
+	stmt->ast_kind = AST_NOP_STMT;
+	if (!result) return true;
+	if (!ast_ok(result)) return ast_poison(stmt);
+	return sema_analyse_then_overwrite(context, stmt, astid(result));
+}
+
 bool sema_analyse_ct_echo_stmt(SemaContext *context, Ast *statement)
 {
 	Expr *message = statement->expr_stmt;
@@ -3213,6 +3231,8 @@ static inline bool sema_analyse_statement_inner(SemaContext *context, Ast *state
 			return sema_analyse_ct_type_assign_stmt(context, statement);
 		case AST_DECLS_STMT:
 			return sema_analyse_decls_stmt(context, statement);
+		case AST_CT_EXPAND_STMT:
+			return sema_analyse_ct_expand_stmt(context, statement);
 		case AST_ASM_BLOCK_STMT:
 			return sema_analyse_asm_stmt(context, statement);
 		case AST_ASSERT_STMT:
