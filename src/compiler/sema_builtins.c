@@ -359,7 +359,7 @@ static bool sema_expr_analyse_str_replace(SemaContext *context, Expr *expr, Expr
 			break;
 		}
 	}
-	expr_rewrite_const_string(expr, scratch_buffer_copy());
+	expr_rewrite_const_string_from_scratch(expr);
 	return true;
 }
 
@@ -620,7 +620,7 @@ INLINE BinaryOp operator_from_builtin(BuiltinFunction fn)
 bool sema_expr_analyse_builtin_call(SemaContext *context, Expr *expr)
 {
 	expr->call_expr.is_builtin = true;
-	expr->call_expr.arguments = sema_expand_vasplat_exprs(context, expr->call_expr.arguments);
+	expr->call_expr.arguments = sema_expand_vasplat_exprs(context, expr->call_expr.arguments, NULL);
 
 	BuiltinFunction func = exprptr(expr->call_expr.function)->builtin_expr.builtin;
 	Expr **args = expr->call_expr.arguments;

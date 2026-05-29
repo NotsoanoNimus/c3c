@@ -288,6 +288,7 @@ static inline bool parse_asm_addr(ParseContext *c, ExprAsmArg *asm_arg)
 			CONSUME_OR_RET(TOKEN_RBRACKET, false);
 			return true;
 		case TOKEN_SHL:
+			advance(c);
 			asm_arg->offset_type = ASM_SCALE_SHL;
 			if (!parse_asm_offset(c, asm_arg)) return false;
 			CONSUME_OR_RET(TOKEN_RBRACKET, false);
@@ -1421,9 +1422,6 @@ Ast *parse_stmt(ParseContext *c)
 		case TOKEN_CT_STRINGIFY:
 		case TOKEN_CT_TERNARY:
 		case TOKEN_CT_VAARG:
-		case TOKEN_CT_VACONST:
-		case TOKEN_CT_VACOUNT:
-		case TOKEN_CT_VAEXPR:
 		case TOKEN_FALSE:
 		case TOKEN_INTEGER:
 		case TOKEN_LENGTHOF:
@@ -1465,7 +1463,6 @@ Ast *parse_stmt(ParseContext *c)
 		case TOKEN_CT_ENDSWITCH:
 		case TOKEN_CT_EXEC:
 		case TOKEN_CT_INCLUDE:
-		case TOKEN_CT_VASPLAT:
 		case TOKEN_DIV:
 		case TOKEN_DIV_ASSIGN:
 		case TOKEN_DOCS_END:

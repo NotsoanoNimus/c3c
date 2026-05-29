@@ -68,7 +68,7 @@ fn HashMap* HashMap.tinit(&self, sz capacity = DEFAULT_INITIAL_CAPACITY, float l
 
 <*
  @param [&inout] allocator : "The allocator to use"
- @require $vacount % 2 == 0 : "There must be an even number of arguments provided for keys and values"
+ @require $vaarg.len % 2 == 0 : "There must be an even number of arguments provided for keys and values"
  @require capacity > 0 : "The capacity must be 1 or higher"
  @require load_factor > 0.0 && load_factor <= 1 : "The load factor must be higher than 0 and less or equal to 1"
  @require !self.is_initialized() : "Map was already initialized"
@@ -77,14 +77,14 @@ fn HashMap* HashMap.tinit(&self, sz capacity = DEFAULT_INITIAL_CAPACITY, float l
 macro HashMap* HashMap.init_with_key_values(&self, Allocator allocator, ..., sz capacity = DEFAULT_INITIAL_CAPACITY, float load_factor = DEFAULT_LOAD_FACTOR)
 {
 	self.init(allocator, capacity, load_factor);
-	$for var $i = 0; $i < $vacount; $i += 2:
+	$for var $i = 0; $i < $vaarg.len; $i += 2:
 		self.set($vaarg[$i], $vaarg[$i + 1]);
 	$endfor
 	return self;
 }
 
 <*
- @require $vacount % 2 == 0 : "There must be an even number of arguments provided for keys and values"
+ @require $vaarg.len % 2 == 0 : "There must be an even number of arguments provided for keys and values"
  @require capacity > 0 : "The capacity must be 1 or higher"
  @require load_factor > 0.0 && load_factor <= 1 : "The load factor must be higher than 0 and less or equal to 1"
  @require !self.is_initialized() : "Map was already initialized"
@@ -92,7 +92,7 @@ macro HashMap* HashMap.init_with_key_values(&self, Allocator allocator, ..., sz 
 *>
 macro HashMap* HashMap.tinit_with_key_values(&self, ..., sz capacity = DEFAULT_INITIAL_CAPACITY, float load_factor = DEFAULT_LOAD_FACTOR)
 {
-	return self.init_with_key_values(tmem, $vasplat, capacity: capacity, load_factor: load_factor);
+	return self.init_with_key_values(tmem, ...$vaarg, capacity: capacity, load_factor: load_factor);
 }
 
 <*
@@ -124,7 +124,7 @@ fn HashMap* HashMap.init_from_keys_and_values(&self, Allocator allocator, Key[] 
  @require capacity > 0 : "The capacity must be 1 or higher"
  @require load_factor > 0.0 && load_factor <= 1 : "The load factor must be higher than 0 and less or equal to 1"
  @require !self.is_initialized() : "Map was already initialized"
- @require capacity < MAXIMUM_CAPACITY : "Capacity cannot exceed maximum"
+ @require capacity <= MAXIMUM_CAPACITY : "Capacity cannot exceed maximum"
 *>
 fn HashMap* HashMap.tinit_from_keys_and_values(&self, Key[] keys, Value[] values, sz capacity = DEFAULT_INITIAL_CAPACITY, float load_factor = DEFAULT_LOAD_FACTOR)
 {
@@ -227,7 +227,7 @@ macro Value HashMap.@get_or_set(&map, Key key, Value #expr)
 		return val;
 	}
 	uint hash = rehash(key.hash());
-	sz index = index_for(hash, map.table.len);
+	int index = index_for(hash, map.table.len);
 	for (Entry *e = map.table[index]; e != null; e = e.next)
 	{
 		if (e.hash == hash && equals(key, e.key)) return e.value;
@@ -402,7 +402,7 @@ fn HashMapKeyIterator HashMap.key_iter(&self)
 
 // --- private methods
 
-fn void hashmap_add_entry(HashMap* map, uint hash, Key key, Value value, uint bucket_index) @private
+fn void hashmap_add_entry(HashMap* map, uint hash, Key key, Value value, int bucket_index) @private
 {
 	$if COPY_KEYS:
 	key = key.copy(map.allocator);
@@ -527,9 +527,8 @@ fn bool hashmap_remove_entry_for_key(HashMap* map, Key key) @private
 	return false;
 }
 
-fn void hashmap_create_entry(HashMap* map, uint hash, Key key, Value value, uint bucket_index) @private
+fn void hashmap_create_entry(HashMap* map, uint hash, Key key, Value value, int bucket_index) @private
 {
-	Entry *e = map.table[bucket_index];
 	$if COPY_KEYS:
 	key = key.copy(map.allocator);
 	$endif

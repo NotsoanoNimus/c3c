@@ -416,7 +416,6 @@ static inline bool assert_create_from_contract(SemaContext *context, Expr *direc
 {
 	Expr *declexpr = directive->contract_expr.decl_exprs;
 	ASSERT(declexpr->expr_kind == EXPR_EXPRESSION_LIST);
-
 	FOREACH(Expr *, expr, declexpr->expression_list)
 	{
 		if (expr->expr_kind == EXPR_DECL) RETURN_SEMA_ERROR(expr, "Only expressions are allowed in contracts.");
@@ -510,11 +509,6 @@ static inline bool sema_check_return_matches_opt_returns(SemaContext *context, E
 		if (opt == fault) return true;
 	}
 	// No match
-	FOREACH(Decl *, opt, context->call_env.opt_returns)
-	{
-		assert(opt->decl_kind == DECL_FAULT);
-		if (opt == fault) return true;
-	}
 	RETURN_SEMA_ERROR(ret_expr, "This value does not match declared optional returns, it needs to be declared with the other optional returns.");
 }
 
@@ -530,7 +524,7 @@ static bool sema_analyse_macro_constant_ensures(SemaContext *context, Expr *ret_
 	// we won't be able to do any constant ensure checks anyway, so skip.
 	if (!sema_cast_const(ret_expr)) return true;
 
-	Decl *contracts = declptrzero(context->current_macro->func_decl.docs);
+	Decl *contracts = declptrzero(context->current_macro->docs);
 	Expr **ensures = contracts ? contracts->contracts_decl.ensures : NULL;
 
 	// We store the old return_expr for retval
@@ -758,7 +752,7 @@ static inline bool sema_analyse_return_stmt(SemaContext *context, Ast *statement
 		AstId first = 0;
 		AstId *append_id = &first;
 		// Creating an assign statement
-		Decl *contracts = declptrzero(context->call_env.current_function->func_decl.docs);
+		Decl *contracts = declptrzero(context->call_env.current_function->docs);
 		Expr **ensures = contracts ? contracts->contracts_decl.ensures : NULL;
 		context->return_expr = return_expr;
 		FOREACH(Expr *, ensure, ensures)
@@ -766,7 +760,7 @@ static inline bool sema_analyse_return_stmt(SemaContext *context, Ast *statement
 			bool success;
 			SCOPE_START_WITH_FLAGS(SCOPE_ENSURE, statement->loc);
 			{
-				success = assert_create_from_contract(context, ensure, &append_id, statement->loc);
+				success = assert_create_from_contract(context, copy_expr_single(ensure), &append_id, statement->loc);
 			}
 			SCOPE_END;
 			if (!success) return false;
@@ -798,7 +792,6 @@ static inline bool sema_expr_valid_try_expression(Expr *expr)
 		case EXPR_CATCH:
 		case EXPR_COND:
 		case EXPR_POISONED:
-		case EXPR_CT_ARG:
 		case EXPR_CT_FEATURE:
 		case EXPR_CT_DEFINED:
 		case EXPR_CT_EVAL:
@@ -1098,6 +1091,7 @@ static inline bool sema_analyse_last_cond(SemaContext *context, Expr *expr, Cond
 				context->active_scope.is_poisoned = true;
 				return false;
 			}
+			return true;
 		default:
 			break;
 	}
@@ -1185,13 +1179,16 @@ static inline bool sema_analyse_cond(SemaContext *context, Expr *expr, CondType 
 		// 3d. We expect an initialization for the last declaration.
 		if (!init)
 		{
-			SEMA_ERROR(last, "Expected a declaration with initializer.");
-			return false;
+			RETURN_SEMA_ERROR(last, "Expected a declaration with initializer.");
 		}
 		// 3e. Expect that it isn't an optional
 		if (IS_OPTIONAL(init))
 		{
 			return sema_error_failed_cast(context, last, last->type, cast_to_bool ? type_bool : init->type);
+		}
+		if (IS_OPTIONAL(decl))
+		{
+			RETURN_SEMA_ERROR(decl, "Expected a non-optional variable.");
 		}
 		if (cast_to_bool)
 		{
@@ -1732,7 +1729,7 @@ SKIP_OVERLOAD:;
 	}
 	else
 	{
-		if (expr_may_addr(enumerator))
+		if (expr_may_ref(enumerator))
 		{
 			is_addr = true;
 			expr_insert_addr(enumerator);
@@ -1960,7 +1957,7 @@ static inline bool sema_check_for_dead_code(SemaContext *context, Ast *statement
 	{
 		context->active_scope.allow_dead_code = true;
 		bool warn = SEMA_WARN(statement, dead_code, "This code will never execute.");
-		if (compiler.build.warnings.dead_code > WARNING_SILENT) sema_note_prev_at(context->active_scope.end_jump.loc, "This code is preventing it from exectuting");
+		if (compiler.build.warnings.dead_code > WARNING_SILENT) sema_note_prev_at(context->active_scope.end_jump.loc, "This code is preventing it from executing");
 		return warn;
 	}
 	return true;
@@ -3066,7 +3063,7 @@ bool sema_analyse_ct_expand_stmt(SemaContext *context, Ast *stmt)
 	if (!expr_is_const_string(string)) RETURN_SEMA_ERROR(string, "Expected a constant string to '$expand'.");
 	scratch_buffer_clear();
 	SourceLoc* loc = sourcelocptr(string->loc);
-	scratch_buffer_printf("%s.%d", context->unit->file->full_path, loc->row, loc->col);
+	scratch_buffer_printf("%s.%d.%d", context->unit->file->full_path, loc->row, loc->col);
 	File *file = source_file_text_load(scratch_buffer_to_string(), str_copy(string->const_expr.bytes.ptr, string->const_expr.bytes.len));
 	Ast *result = parse_include_file_stmts(file, context->unit);
 	stmt->ast_kind = AST_NOP_STMT;
@@ -3453,7 +3450,7 @@ bool sema_analyse_function_body(SemaContext *context, Decl *func)
 		AstId assert_first = 0;
 		AstId *next = &assert_first;
 		bool has_ensures = false;
-		Decl *contracts = declptrzero(func->func_decl.docs);
+		Decl *contracts = declptrzero(func->docs);
 		if (contracts)
 		{
 			copy_begin();
@@ -3465,6 +3462,7 @@ bool sema_analyse_function_body(SemaContext *context, Decl *func)
 		context->call_env.ensures = has_ensures;
 		bool is_naked = func->func_decl.attr_naked;
 		if (!is_naked) sema_append_contract_asserts(assert_first, body);
+		ASSERT(rtype);
 		Type *canonical_rtype = type_no_optional(rtype)->canonical;
 		if (!is_naked && has_ensures && type_is_void(canonical_rtype))
 		{

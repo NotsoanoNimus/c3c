@@ -219,7 +219,7 @@ fn void DString.append_char_repeat(&self, char c, sz times)
 macro void DString.append_repeat(&self, c, sz times)
 {
 	if (times == 0) return;
-	$switch $typeof(c):
+	$switch $Typeof(c):
 		$case String:
 			self.append_string_repeat(c, times);
 		$case char:
@@ -322,17 +322,18 @@ fn bool DString.less(self, DString other_string)
 {
 	StringData* str1 = self.data();
 	StringData* str2 = other_string.data();
-	if (str1 == str2) return false;
-	if (!str1) return str2.len != 0;
-	if (!str2) return str1.len == 0;
+	if (str1 == str2 || !str2) return false;
+	if (!str1) return str2.len > 0;
 	sz str1_len = str1.len;
 	sz str2_len = str2.len;
-	if (str1_len != str2_len) return str1_len < str2_len;
-	for (int i = 0; i < str1_len; i++)
+	sz len = math::min(str1_len, str2_len);
+	foreach (i, s : str1.chars[:len])
 	{
-		if (str1.chars[i] >= str2.chars[i]) return false;
+		char c = str2.chars[i];
+		if (c > s) return true;
+		if (c < s) return false;
 	}
-	return true;
+	return str1_len < str2_len;
 }
 
 fn void DString.append_bytes(&self, char[] bytes)
@@ -429,7 +430,7 @@ fn void DString.delete(&self, sz start, sz len = 1)
 
 macro void DString.append(&self, value)
 {
-	var $Type = $typeof(value);
+	var $Type = $Typeof(value);
 	$switch $Type:
 		$case char:
 		$case ichar:
@@ -457,7 +458,7 @@ macro void DString.append(&self, value)
 *>
 macro void DString.append_inline(&self, value)
 {
-	var $Type = $typeof(value);
+	var $Type = $Typeof(value);
 	$switch $Type:
 		$case char:
 		$case ichar:
@@ -589,7 +590,7 @@ fn sz DString.insert_utf32_at(&self, sz index, Char32[] chars)
 
 macro void DString.insert_at(&self, sz index, value)
 {
-	var $Type = $typeof(value);
+	var $Type = $Typeof(value);
 	$switch $Type:
 		$case char:
 		$case ichar:

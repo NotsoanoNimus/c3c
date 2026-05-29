@@ -58,6 +58,7 @@ const char *kw_get_tag;
 const char *kw_has_tag;
 const char *kw_in;
 const char *kw_inout;
+const char *kw_is_const;
 const char *kw_is_ordered;
 const char *kw_has_equals;
 const char *kw_kind;
@@ -106,7 +107,7 @@ void symtab_init(uint32_t capacity)
 	symtab.bucket_mask = capacity - 1;
 
 	size_t size = capacity * sizeof(SymtabEntry*);
-	symtab.bucket = malloc(size);
+	symtab.bucket = cmalloc(size);
 	// Touch all pages to improve perf(!)
 	memset(symtab.bucket, 0, size);
 
@@ -161,6 +162,7 @@ void symtab_init(uint32_t capacity)
 	kw_has_tag = KW_DEF("has_tag");
 	kw_in = KW_DEF("in");
 	kw_inout = KW_DEF("inout");
+	kw_is_const = KW_DEF("is_const");
 	kw_is_ordered = KW_DEF("is_ordered");
 	kw_kind = KW_DEF("kind");
 	kw_libc = KW_DEF("libc");
@@ -502,7 +504,7 @@ void stable_init(STable *table, uint32_t initial_size)
 	ASSERT(initial_size && "Size must be larger than 0");
 	assert (is_power_of_two(initial_size) && "Must be a power of two");
 
-	SEntry *entries = CALLOC(initial_size * sizeof(Entry));
+	SEntry *entries = CALLOC(initial_size * sizeof(SEntry));
 	table->count = 0;
 	table->capacity = initial_size;
 	table->max_load = initial_size * TABLE_MAX_LOAD;
@@ -511,7 +513,7 @@ void stable_init(STable *table, uint32_t initial_size)
 
 void stable_clear(STable *table)
 {
-	memset(table->entries, 0, table->capacity * sizeof(Entry));
+	memset(table->entries, 0, table->capacity * sizeof(SEntry));
 	table->count = 0;
 }
 

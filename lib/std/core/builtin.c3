@@ -77,15 +77,26 @@ macro sz @bitsizeof(#expr) @builtin @const => @sizeof(#expr) * 8u;
  Compile-time check for whether a set of constants contains a certain expression.
 
  @param $needle : "The expression whose value should be located."
+ @require @_all_const_in{$Typeof($needle)}(...$vaarg) : "All values must be constant"
 *>
 macro bool @in($needle, ...) @builtin @const
 {
-	$for var $x = 0; $x < $vacount; $x++:
-		$assert $defined($needle == $vaconst[$x])
-			: "Index %s: types '%s' (needle) and '%s' are not equatable", $x, $typeof($needle), $typeof($vaconst[$x]);
-		$if $needle == $vaconst[$x]: return true; $endif
+	$for var $x = 0; $x < $vaarg.len; $x++:
+		$assert $defined($needle == $vaarg[$x])
+			: "Index %s: types '%s' (needle) and '%s' are not equatable", $x, $Typeof($needle), $Typeof($vaarg[$x]);
+		$if $needle == $vaarg[$x]: return true; $endif
 	$endfor
 	return false;
+}
+
+macro @_all_const_in(...) <NeedleType> @const @local
+{
+	$for int $i = 0; $i < $vaarg.len; $i++:
+		$if $defined(NeedleType a = $vaarg[$i]) &&& !$defined(NeedleType $a = $vaarg[$i]):
+			return false;
+		$endif
+	$endfor
+	return true;
 }
 
 <*
@@ -94,12 +105,12 @@ macro bool @in($needle, ...) @builtin @const
  @param v : `the any to convert to the given type.`
  @param $Type : `the type to convert to`
  @return `The any.ptr converted to its type.`
- @ensure $typeof(return) == $Type*
+ @ensure $Typeof(return) == $Type*
  @return? TYPE_MISMATCH
 *>
 macro anycast(any v, $Type) @builtin
 {
-	if (v.type != $Type::typeid) return TYPE_MISMATCH~;
+	if (v.type != $Type) return TYPE_MISMATCH~;
 	return ($Type*)v.ptr;
 }
 
@@ -109,7 +120,7 @@ macro anycast(any v, $Type) @builtin
 *>
 macro any.to(self, $Type)
 {
-	if (self.type != $Type::typeid) return TYPE_MISMATCH~;
+	if (self.type != $Type) return TYPE_MISMATCH~;
 	return *($Type*)self.ptr;
 }
 
@@ -133,7 +144,7 @@ macro @addr(#val) @builtin
 
 macro typeid @typeid(#value) @const @builtin
 {
-	return $typeof(#value)::typeid;
+	return $Typeof(#value);
 }
 
 
@@ -152,7 +163,7 @@ macro void always_assert(bool #value, String $fmt = "", ...) @builtin @format(1)
 		$if $fmt == "":
 			abort(@sprintf("Violated assert '%s'.", $stringify(#value)));
 		$else
-			abort(@sprintf("Violated assert '%s': %s", $stringify(#value), $fmt), $vasplat);
+			abort(@sprintf("Violated assert '%s': %s", $stringify(#value), $fmt), ...$vaarg);
 		$endif
 	}
 }
@@ -169,7 +180,7 @@ macro bool may_member_eq($Type) @builtin @const
 	$foreach $member : $Type::members:
 		// Using |= here instead of `return false;` prevents this macro from generating many runtime return lines,
 		//   especially in the case that many of the struct fields meet this condition.
-		$ret = $ret ||| !$defined($member.get($a) == $member.get($b));
+		$ret = $ret ||| !$defined($a.$member == $b.$member);
 	$endforeach
 	return !$ret;
 }
@@ -178,15 +189,15 @@ macro bool may_member_eq($Type) @builtin @const
  Compare two structs of the same type memberwise, using each member's `==` overload.
  Importantly, this comparison _ignores_ an existing `==` overload for the struct type itself.
 
- @require may_member_eq($typeof(left)) : "Only structs with members that are trivially equatable with `==` are supported."
+ @require may_member_eq($Typeof(left)) : "Only structs with members that are trivially equatable with `==` are supported."
  @require @kindof(left) != POINTER && @kindof(right) != POINTER : "You cannot compare structures by reference. Dereference them first."
- @require $typeof(left) == $typeof(right) : "Both input structures must be the same type."
+ @require $Typeof(left) == $Typeof(right) : "Both input structures must be the same type."
 *>
 macro bool member_eq(left, right) @builtin
 {
 	bool res = true;
-	$foreach $member : $typeof(left)::members:
-		res = res && ($member.get(left) == $member.get(right));
+	$foreach $member : $Typeof(left)::members:
+		res = res && (left.$member == right.$member);
 	$endforeach
 	return res;
 }
@@ -285,7 +296,7 @@ fn void default_panic(String message, String file, String function, int line) @i
 
 macro void abort(String string = "Unrecoverable error reached", ...) @format(0) @builtin @noreturn
 {
-	panicf(string, $$FILE, $$FUNC, $$LINE, $vasplat);
+	panicf(string, $$FILE, $$FUNC, $$LINE, ...$vaarg);
 	$$trap();
 }
 
@@ -293,10 +304,11 @@ bool in_panic @private = false;
 
 fn void default_panic(String message, String file, String function, int line) @if (!env::NATIVE_STACKTRACE)
 {
-	$if $defined(io::stderr) && env::PANIC_MSG:
+	$if $defined(io::stderr) && env::PANIC_MSG && !env::EMSCRIPTEN:
 		if (in_panic)
 		{
 			io::eprintn("Panic inside of panic.");
+			$$trap();
 			return;
 		}
 		in_panic = true;
@@ -316,7 +328,7 @@ PanicFn panic = &default_panic;
 
 fn void panicf(String fmt, String file, String function, int line, args...)
 {
-	$if $defined(io::stderr) && env::PANIC_MSG:
+	$if $defined(io::stderr) && env::PANIC_MSG && !env::EMSCRIPTEN:
 		if (in_panic)
 		{
 			io::eprint("Panic inside of panic: ");
@@ -332,6 +344,8 @@ fn void panicf(String fmt, String file, String function, int line, args...)
 			in_panic = false;
 			panic(s.str_view(), file, function, line);
 		};
+	$else
+		panic(fmt, file, function, line);
 	$endif
 }
 
@@ -343,7 +357,7 @@ fn void panicf(String fmt, String file, String function, int line, args...)
 macro void unreachable(String string = "Unreachable statement reached.", ...) @builtin @noreturn
 {
 	$if env::COMPILER_SAFE_MODE:
-	panicf(string, $$FILE, $$FUNC, $$LINE, $vasplat);
+	panicf(string, $$FILE, $$FUNC, $$LINE, ...$vaarg);
 	$else
 	$$unreachable();
 	$endif
@@ -355,16 +369,16 @@ macro void unreachable(String string = "Unreachable statement reached.", ...) @b
 *>
 macro void unsupported(String string = "Unsupported function invoked") @builtin @noreturn
 {
-	panicf(string, $$FILE, $$FUNC, $$LINE, $vasplat);
+	panicf(string, $$FILE, $$FUNC, $$LINE, ...$vaarg);
 	$$unreachable();
 }
 
 <*
- @require $defined(uptr[] x = { $vasplat }) : "Arguments must be convertible to uptr"
+ @require $defined(uptr[] x = { ...$vaarg }) : "Arguments must be convertible to uptr"
 *>
 macro uptr @syscall(...) @builtin
 {
-	return $$syscall($vasplat);
+	return $$syscall(...$vaarg);
 }
 
 
@@ -399,7 +413,7 @@ macro any.as_inner(&self)
  @param $Type : "the type to cast to"
 
  @require @sizeof(expr) == $Type::size  : "Cannot bitcast between types of different size."
- @ensure $typeof(return) == $Type*
+ @ensure $Typeof(return) == $Type*
 *>
 macro bitcast(expr, $Type) @builtin
 {
@@ -417,12 +431,12 @@ macro bitcast(expr, $Type) @builtin
  @param $Type : `The type of the enum`
  @param [in] enum_name : `The name of the enum to search for`
  @require $Type::kind == ENUM : `Only enums may be used`
- @ensure $typeof(return) == $Type*
+ @ensure $Typeof(return) == $Type*
  @return? NOT_FOUND
 *>
 macro enum_by_name($Type, String enum_name) @builtin
 {
-	typeid x = $Type::typeid;
+	typeid x = $Type;
 	foreach (i, name : x.names)
 	{
 		if (name == enum_name) return $Type::from_ordinal(i);
@@ -471,7 +485,7 @@ macro bool @unlikely(bool #value, $probability = 1.0) @builtin
 
 <*
  @require values::@is_int(#value) || values::@is_bool(#value)
- @require $defined($typeof(#value) v = expected)
+ @require $defined($Typeof(#value) v = expected)
  @require $probability >= 0 && $probability <= 1.0
 *>
 macro @expect(#value, expected, $probability = 1.0) @builtin
@@ -480,7 +494,7 @@ macro @expect(#value, expected, $probability = 1.0) @builtin
 	$case env::BUILTIN_EXPECT_IS_DISABLED:
 	return #value == expected;
 	$case $probability == 1.0:
-	return $$expect(#value, ($typeof(#value))expected);
+	return $$expect(#value, ($Typeof(#value))expected);
 	$default:
 	return $$expect_with_probability(#value, expected, $probability);
 	$endswitch
@@ -520,7 +534,7 @@ macro @prefetch(void* ptr, PrefetchLocality $locality = VERY_NEAR, bool $write =
 *>
 macro swizzle(v, ...) @builtin
 {
-	return $$swizzle(v, $vasplat);
+	return $$swizzle(v, ...$vaarg);
 }
 
 
@@ -533,14 +547,14 @@ macro swizzle(v, ...) @builtin
 *>
 macro swizzle2(v, v2, ...) @builtin
 {
-	return $$swizzle2(v, v2, $vasplat);
+	return $$swizzle2(v, v2, ...$vaarg);
 }
 
 
 <*
  Returns the count of leading zero bits from an integer at compile-time.
 
- @require types::is_int($typeof($value)) : "Input value must be an integer"
+ @require types::is_int($Typeof($value)) : "Input value must be an integer"
  @require @sizeof($value) * 8 <= 128 : "Input value must be 128 bits wide or lower"
 *>
 macro int @clz($value) @builtin @const

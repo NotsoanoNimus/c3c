@@ -16,7 +16,7 @@ fn File? open(String filename, String mode)
 
 fn File? open_path(Path path, String mode)
 {
-	return from_handle(os::native_fopen(path.str_view(), mode));
+	return from_handle(os::native_fopen((String)path, mode));
 }
 
 fn bool exists(String file) => @pool()
@@ -114,6 +114,7 @@ fn void? File.write_byte(&self, char c) @dynamic
 *>
 fn void? File.close(&self) @inline @dynamic @maydiscard
 {
+	defer self.file = null;
 	if (self.file && libc::fclose(self.file))
 	{
 		switch (libc::errno())
@@ -132,7 +133,6 @@ fn void? File.close(&self) @inline @dynamic @maydiscard
 			default: return io::UNKNOWN_ERROR~;
 		}
 	}
-	self.file = null;
 }
 
 fn long? File.size(&self) @dynamic
@@ -223,11 +223,11 @@ fn char[]? load(Allocator allocator, String filename)
 	return data[:(sz)len];
 }
 
-fn char[]? load_path(Allocator allocator, Path path) => load(allocator, path.str_view());
+fn char[]? load_path(Allocator allocator, Path path) => load(allocator, (String)path);
 
 fn char[]? load_temp(String filename) => load(tmem, filename);
 
-fn char[]? load_path_temp(Path path) => load_temp(path.str_view());
+fn char[]? load_path_temp(Path path) => load_temp((String)path);
 
 fn void? save(String filename, char[] data)
 {

@@ -1093,11 +1093,11 @@ static inline void llvm_emit_update_bitstruct_array(GenContext *c,
 		value = llvm_bswap_non_integral(c, value, bit_size);
 	}
 	ASSERT(bit_size > 0 && bit_size <= 128);
-	int start_byte = start_bit / 8;
-	int end_byte = end_bit / 8;
-	int start_mod = start_bit % 8;
-	int end_mod = end_bit % 8;
-	ByteSize member_type_bitsize = type_size(member_type) * 8;
+	int start_byte = (int)start_bit / 8;
+	int end_byte = (int)end_bit / 8;
+	int start_mod = (int)start_bit % 8;
+	int end_mod = (int)end_bit % 8;
+	ByteSize member_type_bitsize = (ByteSize)type_size(member_type) * 8;
 	for (int i = start_byte; i <= end_byte; i++)
 	{
 		AlignSize alignment;
@@ -1120,7 +1120,7 @@ static inline void llvm_emit_update_bitstruct_array(GenContext *c,
 			if (i == end_byte && end_mod != 7)
 			{
 				res = llvm_emit_and_raw(c, res, llvm_const_low_bitmask(c, c->byte_type, 8, end_mod + 1));
-				mask = llvm_emit_or_raw(c, mask, llvm_const_high_bitmask(c, c->byte_type, 8, 7 - (int)end_bit));
+				mask = llvm_emit_or_raw(c, mask, llvm_const_high_bitmask(c, c->byte_type, 8, 7 - (int)end_mod));
 			}
 			// Load the current value.
 			LLVMValueRef current = llvm_load(c, c->byte_type, byte_ptr, alignment, "");
@@ -1147,7 +1147,7 @@ static inline void llvm_emit_update_bitstruct_array(GenContext *c,
 			// Clear the lower bits.
 			current = llvm_emit_and_raw(c, current, LLVMBuildNot(c->builder, mask, ""));
 			// Use *or* with the bottom bits from "value":
-			llvm_emit_or_raw(c, current, value);
+			current = llvm_emit_or_raw(c, current, value);
 			// And store it back.
 			llvm_store_to_ptr_raw_aligned(c, byte_ptr, current, alignment);
 			continue;
@@ -1260,7 +1260,8 @@ static inline void llvm_emit_access_addr(GenContext *c, BEValue *be_value, Expr 
 		ASSERT(member->backend_ref);
 		AlignSize align = LLVMGetAlignment(member->backend_ref);
 		AlignSize alignment;
-		LLVMValueRef ptr = llvm_emit_array_gep_raw_index(c, member->backend_ref, member->type, be_value, align, &alignment);
+		ByteSize size = llvm_abi_size(c, llvm_get_type(c, member->type));
+		LLVMValueRef ptr = llvm_emit_array_gep_raw_index(c, member->backend_ref, be_value, align, &alignment, size);
 		llvm_value_set_address(c, be_value, ptr, member->type, alignment);
 		return;
 	}
@@ -1451,8 +1452,15 @@ static inline void llvm_emit_const_initialize_bitstruct_ref(GenContext *c, BEVal
 		llvm_store_zero(c, ref);
 		return;
 	}
-	ASSERT(initializer->kind == CONST_INIT_STRUCT);
 	llvm_store_no_fault(c, ref);
+	if (initializer->kind == CONST_INIT_VALUE)
+	{
+		BEValue value;
+		llvm_emit_expr(c, &value, initializer->init_value);
+		llvm_store(c, ref, &value);
+		return;
+	}
+	ASSERT(initializer->kind == CONST_INIT_STRUCT);
 	llvm_store_raw(c, ref, llvm_emit_const_bitstruct(c, initializer));
 }
 
@@ -2204,7 +2212,7 @@ static void llvm_emit_vec_comp(GenContext *c, BEValue *result, BEValue *lhs, BEV
 				break;
 			case BINARYOP_VEC_NE:
 				// Unordered?
-				res = LLVMBuildFCmp(c->builder, LLVMRealONE, lhs->value, rhs->value, "neq");
+				res = LLVMBuildFCmp(c->builder, LLVMRealUNE, lhs->value, rhs->value, "neq");
 				break;
 			case BINARYOP_VEC_GE:
 				res = LLVMBuildFCmp(c->builder, LLVMRealOGE, lhs->value, rhs->value, "ge");
@@ -2526,7 +2534,7 @@ static void llvm_emit_unary_expr(GenContext *c, BEValue *value, Expr *expr)
 				LLVMValueRef llvm_value;
 				if (type_is_float(vec_type))
 				{
-					llvm_value = LLVMBuildFCmp(c->builder, LLVMRealUEQ, value->value, LLVMConstNull(LLVMTypeOf(value->value)), "not");
+					llvm_value = LLVMBuildFCmp(c->builder, LLVMRealOEQ, value->value, LLVMConstNull(LLVMTypeOf(value->value)), "not");
 				}
 				else
 				{
@@ -2641,7 +2649,7 @@ static void llvm_emit_trap_zero(GenContext *c, Type *type, LLVMValueRef value, c
 	}
 
 	LLVMValueRef zero = llvm_get_zero(c, type);
-	LLVMValueRef ok = type_is_integer(type) ? LLVMBuildICmp(c->builder, LLVMIntEQ, value, zero, "zero") : LLVMBuildFCmp(c->builder, LLVMRealUEQ, value, zero, "zero");
+	LLVMValueRef ok = type_is_integer(type) ? LLVMBuildICmp(c->builder, LLVMIntEQ, value, zero, "zero") : LLVMBuildFCmp(c->builder, LLVMRealOEQ, value, zero, "zero");
 	llvm_emit_panic_on_true(c, ok, error, loc, NULL, NULL, NULL);
 }
 
@@ -2929,7 +2937,7 @@ static void gencontext_emit_slice(GenContext *c, BEValue *be_value, Expr *expr)
 		{
 			// Move pointer
 			AlignSize alignment;
-			start_pointer = llvm_emit_array_gep_raw_index(c, parent.value, type->array.base, &start, type_abi_alignment(parent.type), &alignment);
+			start_pointer = llvm_emit_array_gep_raw_index(c, parent.value, &start, type_abi_alignment(parent.type), &alignment, type_size(type->array.base));
 			break;
 		}
 		case TYPE_SLICE:
@@ -3189,65 +3197,7 @@ void llvm_emit_int_comp_raw(GenContext *c, BEValue *result, Type *lhs_type, Type
 		lhs_signed = type_is_signed(lhs_type);
 		rhs_signed = type_is_signed(rhs_type);
 	}
-	if (lhs_signed != rhs_signed)
-	{
-		// Swap sides if needed.
-		if (!lhs_signed)
-		{
-			Type *temp = lhs_type;
-			lhs_type = rhs_type;
-			rhs_type = temp;
-			(void)rhs_type;
-			lhs_signed = true;
-			rhs_signed = false;
-			LLVMValueRef temp_val = lhs_value;
-			lhs_value = rhs_value;
-			rhs_value = temp_val;
-			switch (binary_op)
-			{
-				case BINARYOP_GE:
-					binary_op = BINARYOP_LE;
-					break;
-				case BINARYOP_GT:
-					binary_op = BINARYOP_LT;
-					break;
-				case BINARYOP_LE:
-					binary_op = BINARYOP_GE;
-					break;
-				case BINARYOP_LT:
-					binary_op = BINARYOP_GT;
-					break;
-				default:
-					break;
-			}
-		}
-	}
-
-	ASSERT(LLVMTypeOf(lhs_value) == LLVMTypeOf(rhs_value));
-
-	if (lhs_signed && !rhs_signed && !vector_type && llvm_is_const(lhs_value) && type_size(lhs_type) <= 8)
-	{
-		long long val = LLVMConstIntGetSExtValue(lhs_value);
-		if (val < 0)
-		{
-			switch (binary_op)
-			{
-				case BINARYOP_EQ:
-				case BINARYOP_GE:
-				case BINARYOP_GT:
-					llvm_value_set(result, llvm_const_int(c, type_bool, 0), type_bool);
-					return;
-				case BINARYOP_NE:
-				case BINARYOP_LE:
-				case BINARYOP_LT:
-					llvm_value_set(result, llvm_const_int(c, type_bool, 1), type_bool);
-					return;
-				default:
-					UNREACHABLE_VOID
-			}
-		}
-		lhs_signed = false;
-	}
+	ASSERT(lhs_signed == rhs_signed);
 
 	if (!lhs_signed)
 	{
@@ -3315,58 +3265,9 @@ void llvm_emit_int_comp_raw(GenContext *c, BEValue *result, Type *lhs_type, Type
 			UNREACHABLE_VOID
 	}
 
-	// If right side is also signed then this is fine.
-	if (rhs_signed)
-	{
-		if (vector_type)
-		{
-			llvm_convert_vector_comparison(c, result, comp_value, lhs_type, binary_op == BINARYOP_EQ);
-			return;
-		}
-		llvm_value_set(result, comp_value, type_bool);
-		return;
-	}
-
-	// Otherwise, special handling for left side signed, right side unsigned.
-	LLVMValueRef zero = llvm_get_zero(c, lhs_type);
-	switch (binary_op)
-	{
-		case BINARYOP_EQ:
-			// Only true if lhs >= 0
-			check_value = LLVMBuildICmp(c->builder, LLVMIntSGE, lhs_value, zero, "check");
-			comp_value = LLVMBuildAnd(c->builder, check_value, comp_value, "siui-eq");
-			break;
-		case BINARYOP_NE:
-			// Always true if lhs < 0
-			check_value = LLVMBuildICmp(c->builder, LLVMIntSLT, lhs_value, zero, "check");
-			comp_value = LLVMBuildOr(c->builder, check_value, comp_value, "siui-ne");
-			break;
-		case BINARYOP_GE:
-			// Only true if rhs >= 0 when regarded as a signed integer
-			check_value = LLVMBuildICmp(c->builder, LLVMIntSGE, rhs_value, zero, "check");
-			comp_value = LLVMBuildAnd(c->builder, check_value, comp_value, "siui-ge");
-			break;
-		case BINARYOP_GT:
-			// Only true if rhs >= 0 when regarded as a signed integer
-			check_value = LLVMBuildICmp(c->builder, LLVMIntSGE, rhs_value, zero, "check");
-			comp_value = LLVMBuildAnd(c->builder, check_value, comp_value, "siui-gt");
-			break;
-		case BINARYOP_LE:
-			// Always true if rhs < 0 when regarded as a signed integer
-			check_value = LLVMBuildICmp(c->builder, LLVMIntSLT, rhs_value, zero, "check");
-			comp_value = LLVMBuildOr(c->builder, check_value, comp_value, "siui-le");
-			break;
-		case BINARYOP_LT:
-			// Always true if rhs < 0 when regarded as a signed integer
-			check_value = LLVMBuildICmp(c->builder, LLVMIntSLT, rhs_value, zero, "check");
-			comp_value = LLVMBuildOr(c->builder, check_value, comp_value, "siui-lt");
-			break;
-		default:
-			UNREACHABLE_VOID
-	}
 	if (vector_type)
 	{
-		llvm_convert_vector_comparison(c, result, comp_value, lhs_type, BINARYOP_EQ == binary_op);
+		llvm_convert_vector_comparison(c, result, comp_value, lhs_type, binary_op == BINARYOP_EQ);
 		return;
 	}
 	llvm_value_set(result, comp_value, type_bool);
@@ -3584,7 +3485,7 @@ static inline void llvm_emit_fp_vector_compare(GenContext *c, BEValue *be_value,
 	llvm_value_addr(c, rhs);
 	LLVMValueRef left = llvm_load(c, fp_vec, lhs->value, lhs->alignment, "lhs");
 	LLVMValueRef right = llvm_load(c, fp_vec, rhs->value, rhs->alignment, "rhs");
-	LLVMValueRef cmp = LLVMBuildFCmp(c->builder, binary_op == BINARYOP_EQ ? LLVMRealOEQ : LLVMRealONE, left, right, "cmp");
+	LLVMValueRef cmp = LLVMBuildFCmp(c->builder, binary_op == BINARYOP_EQ ? LLVMRealOEQ : LLVMRealUNE, left, right, "cmp");
 	if (binary_op == BINARYOP_EQ)
 	{
 		cmp = llvm_emit_call_intrinsic(c, intrinsic_id.vector_reduce_and, &bool_vec, 1, &cmp, 1);
@@ -3758,7 +3659,7 @@ static void llvm_emit_float_comp(GenContext *c, BEValue *result, BEValue *lhs, B
 			break;
 		case BINARYOP_NE:
 			// Unordered?
-			val = LLVMBuildFCmp(c->builder, LLVMRealONE, lhs_value, rhs_value, "neq");
+			val = LLVMBuildFCmp(c->builder, LLVMRealUNE, lhs_value, rhs_value, "neq");
 			break;
 		case BINARYOP_GE:
 			val = LLVMBuildFCmp(c->builder, LLVMRealOGE, lhs_value, rhs_value, "ge");
@@ -3947,7 +3848,7 @@ static void llvm_emit_else(GenContext *c, BEValue *be_value, Expr *expr)
 	if (!real_value.value || LLVMIsUndef(real_value.value))
 	{
 		assert(type_flatten(expr->type) == type_void);
-		assert(!else_value.value);
+		assert(!else_value.value || LLVMIsUndef(else_value.value));
 		llvm_value_set(be_value, NULL, type_void);
 		return;
 	}
@@ -3981,7 +3882,7 @@ INLINE FmulTransformation llvm_get_fmul_transformation(Expr *lhs, Expr *rhs)
 	if (expr_is_neg(lhs) && expr_is_mult(lhs->unary_expr.expr)) return FMUL_LHS_NEG_MULT;
 	// x + y * z
 	if (expr_is_mult(rhs)) return FMUL_RHS_MULT;
-	// x - (y * z)
+	// x + -(y * z)
 	if (expr_is_neg(rhs) && expr_is_mult(rhs->unary_expr.expr)) return FMUL_RHS_NEG_MULT;
 	return FMUL_NONE;
 }
@@ -4042,15 +3943,14 @@ INLINE bool llvm_emit_fmuladd_maybe(GenContext *c, BEValue *be_value, Expr *expr
 
 			if (expr_is_neg(lhs))
 			{
-				// -x - (y * z) => -(x + y * z)
 				args[2] = llvm_emit_expr_to_rvalue(c, lhs->unary_expr.expr);
 				negate_result = true;
 			}
 			else
 			{
-				// x - (y * z) => x + (-y) * z
+				// x + -(y * z) => x + y * -z
 				args[1] = LLVMBuildFNeg(c->builder, args[1], "");
-				args[2] = llvm_emit_expr_to_rvalue(c, lhs->unary_expr.expr);
+				args[2] = llvm_emit_expr_to_rvalue(c, lhs);
 			}
 			break;
 		default:
@@ -4489,8 +4389,6 @@ static inline void llvm_emit_force_unwrap_expr(GenContext *c, BEValue *be_value,
 
 	// Emit success and to end.
 	bool emit_no_err = llvm_emit_br(c, no_err_block);
-
-	POP_CATCH();
 
 	// Emit panic
 	llvm_emit_block(c, panic_block);
@@ -5043,11 +4941,11 @@ BEValue llvm_emit_array_gep_index(GenContext *c, BEValue *parent, BEValue *index
 	ASSERT(llvm_value_is_addr(parent));
 	Type *element = type_lowering(parent->type->array.base);
 	AlignSize alignment;
-	LLVMValueRef ptr = llvm_emit_array_gep_raw_index(c, parent->value, element, index, parent->alignment, &alignment);
+	LLVMValueRef ptr = llvm_emit_array_gep_raw_index(c, parent->value, index, parent->alignment, &alignment, type_size(element));
 	return (BEValue) { .value = ptr, .type = element, .kind = BE_ADDRESS, .alignment = alignment };
 }
 
-LLVMValueRef llvm_emit_array_gep_raw_index(GenContext *c, LLVMValueRef ptr, Type *element_type, BEValue *index, AlignSize array_alignment, AlignSize *alignment)
+LLVMValueRef llvm_emit_array_gep_raw_index(GenContext *c, LLVMValueRef ptr, BEValue *index, AlignSize array_alignment, AlignSize *alignment, ByteSize element_size)
 {
 	LLVMValueRef index_val = llvm_load_value(c, index);
 	Type *index_type = index->type;
@@ -5056,9 +4954,8 @@ LLVMValueRef llvm_emit_array_gep_raw_index(GenContext *c, LLVMValueRef ptr, Type
 	{
 		index_val = llvm_zext_trunc(c, index_val, c->size_type);
 	}
-	ByteSize size = type_size(element_type);
-	*alignment = type_min_alignment(size, array_alignment);
-	return llvm_emit_pointer_inbounds_gep_raw(c, ptr, index_val, size);
+	*alignment = type_min_alignment(element_size, array_alignment);
+	return llvm_emit_pointer_inbounds_gep_raw(c, ptr, index_val, element_size);
 }
 
 BEValue llvm_emit_array_gep(GenContext *c, BEValue *parent, ArrayIndex index)
@@ -5073,7 +4970,7 @@ LLVMValueRef llvm_emit_array_gep_raw(GenContext *c, LLVMValueRef ptr, Type *elem
 {
 	BEValue index_value;
 	llvm_value_set(&index_value, llvm_const_size(c, index), type_sz);
-	return llvm_emit_array_gep_raw_index(c, ptr, element_type, &index_value, array_alignment, alignment);
+	return llvm_emit_array_gep_raw_index(c, ptr, &index_value, array_alignment, alignment, type_size(element_type));
 }
 
 LLVMValueRef llvm_emit_ptradd_raw(GenContext *c, LLVMValueRef ptr, LLVMValueRef offset, ByteSize mult)
@@ -5810,8 +5707,9 @@ INLINE void llvm_emit_call_invocation(GenContext *c, BEValue *result_value,
 			// If we have a target, then use it.
 			if (target && alignment <= target->alignment)
 			{
-				ASSERT(target->kind == BE_ADDRESS);
+				ASSERT(llvm_value_is_addr(target));
 				arg_values[arg_count++] = target->value;
+				llvm_store_no_fault(c, target);
 				sret_return = true;
 				break;
 			}
@@ -6312,6 +6210,16 @@ static inline void llvm_emit_macro_block(GenContext *c, BEValue *be_value, Expr 
 	{
 		// Skip vararg
 		if (!val) continue;
+		// Needed for splat
+		if (val->decl_kind == DECL_DECLARRAY)
+		{
+			FOREACH (Decl *, d, val->decls)
+			{
+				llvm_emit_local_decl(c, d, be_value);
+			}
+			continue;
+		}
+		ASSERT_SPAN(val, val->decl_kind == DECL_VAR);
 		if (val->var.no_init && val->var.defaulted) continue;
 		// In case we have a constant, we never do an emit. The value is already folded.
 		switch (val->var.kind)
@@ -6644,7 +6552,7 @@ static inline void llvm_emit_typeid_info(GenContext *c, BEValue *value, Expr *ex
 					INTROSPECT_TYPE_CONSTDEF, INTROSPECT_TYPE_BITSTRUCT,
 					INTROSPECT_TYPE_OPTIONAL,
 				};
-				for (int i = 0; i < 8; i++)
+				for (int i = 0; i < 9; i++)
 				{
 					llvm_emit_int_comp_raw(c,
 										   &check,

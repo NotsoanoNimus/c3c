@@ -117,7 +117,7 @@ static bool add_members_to_decl_stack(SemaContext *context, Decl *decl, FindMemb
 	{
 		if (!add_interface_to_decl_stack(context, decl)) return false;
 	}
-	if (decl_is_struct_type(decl) || decl->decl_kind == DECL_BITSTRUCT)
+	if (decl_has_members(decl))
 	{
 		FOREACH(Decl *, member, decl->strukt.members)
 		{
@@ -282,7 +282,13 @@ INLINE Type *sema_fold_weak(SemaContext *context, Decl *decl)
 		{
 			if (!sema_analyse_decl(context, decl)) return NULL;
 		}
-		Type *type = decl->type_alias_decl.type_info->type;
+		if (decl->type_alias_decl.is_func)
+		{
+			decl = decl->type_alias_decl.decl;
+			continue;
+		}
+		Expr *expr = decl->type_alias_decl.type_expr;
+		Type *type = expr->expr_kind == EXPR_TYPEINFO ? expr->type_expr->type : expr->const_expr.typeid;
 		if (type->type_kind != TYPE_ALIAS) return type;
 		decl = type->decl;
 	}
@@ -1032,6 +1038,7 @@ bool sema_resolve_type_decl(SemaContext *context, Type *type)
 		case TYPE_SLICE:
 		case TYPE_ANY:
 		case TYPE_INTERFACE:
+		case TYPE_UNTYPEDLIST:
 			return true;
 		case TYPE_OPTIONAL:
 			return sema_resolve_type_decl(context, type->optional);
@@ -1276,7 +1283,7 @@ INLINE bool sema_add_ct_local(SemaContext *context, Decl *decl)
 	ASSERT(decl_is_ct_var(decl));
 
 	Decl *other = sema_find_ct_local(context, decl->name);
-	if (other)
+	if (other && !(other->var.defaulted && !other->var.init_expr))
 	{
 		sema_shadow_error(context, decl, other);
 		decl_poison(decl);

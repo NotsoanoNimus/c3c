@@ -66,7 +66,7 @@ macro bool TempAllocatorPage.is_aligned(&self) => self.size & PAGE_IS_ALIGNED ==
 <*
  @require size >= 64
  @require realloc_size >= 64
- @require allocator.type != TempAllocator::typeid : "You may not create a temp allocator with a TempAllocator as the backing allocator."
+ @require allocator.type != TempAllocator : "You may not create a temp allocator with a TempAllocator as the backing allocator."
  @require min_size > TempAllocator::size + 64 : "Min size must meaningfully hold the data + some bytes"
 *>
 fn TempAllocator*? new_temp_allocator(Allocator allocator, sz size, sz reserve = temp_allocator_reserve_size, sz min_size = temp_allocator_min_size, sz realloc_size = temp_allocator_realloc_size)
@@ -392,8 +392,7 @@ fn void TempAllocator.free(&self)
 fn void _destroy(TempAllocator* self) @local
 {
 	TempAllocator* child = self.derived;
-	if (!child) return;
-	_destroy(child);
+	if (child) _destroy(child);
 	self.vmem.free() @inline;
 	alloc::free(self.allocator, self) @inline;
 }

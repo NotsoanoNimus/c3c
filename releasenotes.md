@@ -1,5 +1,74 @@
 # C3C Release Notes
 
+## 0.8.1 Change list
+
+### Changes / improvements
+- Add `$$PROJECT_PATH`, accessible through `env::PROJECT_PATH`.
+- Deprecate `$field.get(a)` and `$field.set(a, b)`. Replaced by `a.$field` and `a.$field = b`.
+- Add `a.$eval($field)` as a variant of `a.$field`.
+- Add json pretty print.
+
+### Stdlib changes
+- Add math::TAU / math::TWO_PI
+- Add `values::expand` to turn strings containing expressions into values.
+- Enhanced `path::ls` functionality, like searching for wildcard.
+- `LinkedHashMap` renamed `OrderedMap`, `LinkedHashSet` renamed `OrderedSet`. Old names are deprecated.
+- Added initial cpudetect on Linux / MacOS Aarch64.
+- Enable libc::errno for FreeBSD.
+- Checking filesize on Win32 now correctly reports errors. Getting the filesize now rejects directories.
+- `ini::parse` and related takes an `error_line` argument to identify the line with error.
+- JSON marshaling will return INVALID_NUMBER when encountering a inf or NaN for a float.
+- JSON decoding will reject `1.` literals.
+
+### Fixes
+- `@volatile_store` on arrays were sometimes incorrectly lowered.
+- NPOT vectors as associated variables were incorrectly lowered on load. #3228
+- `.get_tag` and `.has_tag` did not work properly for globals and locals.
+- Vectors stored in unions lowered incorrectly causing an assert #3234
+- Segmentation fault during library fetch when the "dependencies" key is missing in project.json. #3233
+- `.tags` would crash if no attribute with arguments were present.
+- `Rect.merge_point` would sometimes result in a point outside of the rect.
+- Possible array overflow in `SortedMap`.
+- Possible memory overwrite in BackingArenaAllocator on realloc.
+- Realloc could cause data corruption in DynamicArenaAllocator.
+- OnStackAllocator would not correctly clear memory on calloc.
+- Vmem temp allocator would not correctly free all vmem on destroy.
+- Wasm memory allocation could overallocate unnecessarily.
+- VirtualMemory contract off by one error.
+- CPU detect of leaf7 on x86 incorrect.
+- Fixed project benchmark target parsing. #3237
+- Incorrect type on `UIntLE` and `UIntBE`.
+- CVaList would behave different incorrectly for types larger than 8 bytes on some platforms.
+- UTF32 BOM detection was broken.
+- Sort from DString.less was inconsistent.
+- Fix io::skip using 'read' vs 'read_byte', causing an error.
+- `Slice2d.slice` incorrectly handled slices with x/y offset and 0/negative length together.
+- `String.to_integer` incorrectly accepted some invalid characters for hex.
+- Removed broken `StringIterator.get`.
+- Fix to refcount behaviour, preventing issue on release.
+- `File.close` should always invalidate the pointer on close, even on failures.
+- Overlong conversions to unicode for `%c` at boundaries.
+- Do not rely on implicit allocation for getcwd.
+- Skipping symlinks wasn't properly implemented for Win32.
+- Reverse indexing a value that overloads indexing would index an anonymous copy of the value.
+- Fix case where member.set would hit an assert.
+- Same type casts would not become rvalues.
+- Hex decoding would leak memory on failure.
+- `Codepage.by_name` would not use normalized name.
+- `@return? bar!` didn't work if the identifier matched a macro.
+- Copying compile time strings during compile time folding with strings containing 0 would sometimes get truncated. #3267
+- Pem parsing did not correctly handle empty body, nor when the first line was too short.
+- Additional pem parsing bugs on malformed data handled.
+- Compiler would crash when getting the `kind`, `qname`, or `alignment` of an `untypedlist`.
+- `untypedlist` incorrectly had `size` property.
+- JSON handling of UTF16 surrogate pairs fixed.
+- `base32`, `base64` and `codepage` would leak memory on encode/decode errors.
+- Indexing into a type with a `$reflect` value would sometimes cause a crash.
+- Using a faultdef hidden behind `@if` would cause a crash.
+- Taking the type of a macro method would cause a crash.
+- Cap array size to avoid overflow when making multidimensional arrays that are too large.
+- DynamicArenaAllocator would incorrectly handle some reuse cases.
+
 ## 0.8.0 Change list
 
 ### Changes / improvements
@@ -14,9 +83,9 @@
 - Removed `@structlike` attribute.
 - Removed deprecated `@extern` attribute.
 - `:` in contracts before description is now mandatory.
-- Removed deprecated `Enum.associated` (use `Enum.membersof`).
-- Removed deprecated `Enum.elements` (use `Enum.len`).
-- Removed deprecated `foo_function.params` (use `foo_function.paramsof`).
+- Removed deprecated `Enum.associated` (use `Enum::members`).
+- Removed deprecated `Enum.elements` (use `Enum::len`).
+- Removed deprecated `foo_function.params` (use `$reflect(foo_function).params`).
 - Removed deprecated `$is_const`.
 - Removed deprecated `$assignable`.
 - Enums now no longer directly support `+` and `-` – use ordinals instead.
@@ -49,17 +118,29 @@
 - Added the `tags` property for types and `$reflect`.
 - Allow taking the type of an interface method.
 - Add `$expand` compile time function to convert strings to code.
+- Constdef now infers through unary negations.
+- Only used libraries are scanned for dependencies. #3144
+- `$vaconst`, `$vaexpr` and `$vatype` removed.
+- Improve error message on unsupported typeid runtime access at runtime. #3170
+- Added support for Emscripten.
+- Replace `$vacount` by `$vaarg.len`, replace `$vasplat` by `...$vaarg`.
+- `$vaarg` behaves as `$vaexpr`.
+- Added `docgen` command to generate documentation.
+- Added `jmpabs` x86 CPU feature.
+- Implicit unsigned <-> signed integer conversions removed.
+- Added C3 Compiler setup installer for Windows
+- `alias Foo = int::typeid` now works.
+- `$typeof` => `$Typeof`, `$typefrom` => `$Typefrom`.
 
 ### Stdlib changes
-- `std::collections::RingBuffer` has been renamed `RingList`.
 - Add `List.remove_unordered_at`.
 - PanicFn now takes an `int` for row.
 - Add `std::collections::Deque`.
 - Add `compare_to` and `compare_to_ignore_case` to `String`. #3096
 - Add `SortedMap` based on skip lists.
 - Add `OneShotChannel` to `std::thread::channel` for single-send/single-receive thread synchronization.
-- `BufferedChannel` and `UnbufferedChannel` now pointers, create using `create_unbuffered` and `create_buffered`
-- `RingList` now conforms to `foreach` and adds additional functions.
+- `BufferedChannel` and `UnbufferedChannel` are now pointers, create using `create_unbuffered` and `create_buffered`
+- `RingBuffer` now conforms to `foreach` and adds additional functions.
 - Ini parser and encoder.
 - Updated `ref::new` argument order.
 - Support setting thread stack size.
@@ -68,17 +149,22 @@
 - Make `DString.append_repeat` polymorphic adding `append_string_repeat` and `append_char_repeat`.
 - Add `DString.append_inline` for optimized uses.
 - Ordering of `object::new_*` arguments are now "allocator first".
-- Add `remove_unordered_at` to ElasticArray.
+- Add `remove_unordered_at` to FixedList.
 - Changed `json` to support two flavors of JSON: JSON and JSONC.
 - Changed `json` API: `parse` -> `load`, `parse_string` -> `parse`.
 - `conv::detect_bom`, convert utf16/utf32 from bytes with byteswap / unaligned data.
 - Mergesort added.
 - `set_cursor` is renamed `seek`, and the old `seek` is removed.
-- `std::math` name changes: `HALF_PI` => `HALF_PI`, `QUARTER_PI` => `QUARTER_PI`, `DIV_PI` => `INV_PI` etc, `cosec` => `csc`, `cotan` => `cot`, `muladd` => `mad`
+- `std::math` name changes: `HALF_PI` => `PI_2`, `PI_4` => `QUARTER_PI`, `DIV_PI` => `INV_PI` etc, `cosec` => `csc`, `cotan` => `cot`, `muladd` => `mad`
 - `std::time` name changes: `diff_hour` => `diff_hours`. `DateTime.set_date` => `DateTime.set`, `datetime::from_date_*` => `datetime::at_*`
 - `std::hash` method name convention changes: `updatec` / `update_char` => `update_byte`.
 - `std::string` name changes: `strip` => `strip_prefix`, `strip_end` => `strip_suffix`.
-
+- `std::collections::object` added `Object.to_value` to convert from an object to a value.
+- `std::encoding::xml` added for XML parsing and serialization.
+- Fix `Path.append` separator not honoring the specified environment.
+- Add multi part and extension support to `Path.append`.
+- The `Path` API now is split into `PathPosix` and `PathWin`, `Path` is implicitly castable to `String` and loses the `str_view()` method. Use `path::tnew` instead of `path::temp` for a temporary path.
+ 
 ### Fixes
 - Slice comparison lowering would not work correctly in macros in some cases. #3095
 - Attributes `@allow_deprecated`, `@constinit`, `@noalias`, `@nostrip`, and `@optional` would erroneously accept parameters. #3098
@@ -96,6 +182,38 @@
 - EnumSet with more than 128 entries was broken.
 - Handle underflow in zip.
 - Bugs in check for name suggestions on name mismatch.
+- Fix bug where only one ensure would not be inlined correctly. #3162
+- Incorrect error message when casting to non-existent enum.
+- Macro `$Type = ...` would not work correctly with `$defined`
+- Fix enum value handling in `Object` (`std::collections::object`) to conform with changes in enums.
+- Compiler assert in certain cases with ?? and void returns. #3168
+- Bug in compiler-rt for i128 shift.
+- LinkedBlockingQueue.push_timeout did not work correctly.
+- Splat into vaarg macro, where vaarg is not used #2782.
+- Comparison with floats had incorrect codegen, leading to incorrect results for NaN #3175.
+- Zeroing out simd vectors in a struct could in some cases lead to incorrect lowering #3179.
+- Incorrect lowering when returning a struct to an optional value on Win64 in some cases #3180.
+- Fix bug where a method is considered doubly generic if declared in a generic module for a generic type. #3176
+- Fix exp10 on platforms without exp10 as an LLVM builtin.
+- LLVM 23 compatibility: map `Os`/`Oz` to `O2` pass pipeline, fix `returnaddress` intrinsic signature, add `optsize`/`minsize` function attributes.
+- Warning for ignored visibility modifiers was not emitted for macro methods #3071
+- `while (String? x = foo()!)` was accidentally allowed causing a lowering error.
+- Crash casting uint to bitstruct inside struct field assignment #3187
+- Vec2/Vec3 transform missed matrix translation.
+- Matrix rotation ignored matrix itself.
+- Fix BigInt shr, to_format, and others.
+- Fix ends in TDist.quantile, FDist.pdf, ChiSquaredDist.pdf
+- Fix to easing expo_in and bounce_inout.
+- `deque` with shrinking a zero sized list caused infinite loop.
+- Printing an enummap yielded the wrong character count.
+- Incorrect contract in `FixedList` allowed insert out of range.
+- Fix double-free in InterfaceList.
+- Object.set_at was incorrect.
+- Bitstruct with backing char[n] would occasionally be incorrectly stored.
+- fmuladd lowering crashes on `a + -(b * c)` with fastmath.
+- Constant folding `-30 % -7` would incorrectly yield "2".
+- Parsing << in asm would not be correctly handled.
+- Incorrect lowering for `float[<3>]` when placed aligned in a struct.
 
 ## 0.7.11 Change list
 
@@ -437,7 +555,7 @@
 - Return of Thread/Mutex/CondVar `destroy()` is now "@maydiscard" and should be ignored. It will return void in 0.8.0.
 - Return of Mutex `unlock()` and `lock()` is now "@maydiscard" and should be ignored. They will return void in 0.8.0.
 - Return of ConditionVariable `signal()` `broadcast()` and `wait()` are now "@maydiscard". They will return void in 0.8.0.
-- Return of Thread `detatch()` is now "@maydiscard". It will return void in 0.8.0.
+- Return of Thread `detach()` is now "@maydiscard". It will return void in 0.8.0.
 - Buffered/UnbufferedChannel, and both ThreadPools have `@maydiscard` on a set of functions. They will return void in 0.8.0.
 - Pthread bindings correctly return Errno instead of CInt.
 - Return of Thread `join()` is now "@maydiscard".
@@ -557,7 +675,7 @@
 - Add ??? and +++= to list-precedence.
 - Fix issues with linking when using symbol aliases. #2519
 - Splatting optional compile-time macro parameter from inside lambda expression does not work #2532.
-- Compiler segfault when getting a nonexistant member from an unnamed struct #2533.
+- Compiler segfault when getting a nonexistent member from an unnamed struct #2533.
 - Correctly mention aliased type when method is not implemented #2534.
 - Regression: Not printing backtrace when tests fail for MacOS #2536.
 - Name property would be used even under `c3c test` #2587.
@@ -1381,7 +1499,7 @@
 - Fix bug where `a > 0 ? f() : g()` could cause a compiler crash if both returned `void!`.
 - `@builtin` was not respected for generic modules #1617.
 - Fix issue writing a single byte in the WriteBuffer
-- A distinct inline pointer type can now participate in pointer arithmetics.
+- A distinct inline pointer type can now participate in pointer arithmetic.
 - Support &a[0] returning the distinct type when applying it to a distinct of a pointer.
 - Fix error when calling `HashMap.remove` on uninitialized `HashMap`.
 - Fix issue with resolved try-unwrap in defer.
@@ -1483,7 +1601,7 @@
 ### Stdlib changes
 - Remove unintended print of `char[]` as String
 - Add read/write to stream with big endian ints.
-- Move accidently hidden "wrap_bytes".
+- Move accidentally hidden "wrap_bytes".
 - Added CBool #1530.
 - Added encoding/base32 module.
 

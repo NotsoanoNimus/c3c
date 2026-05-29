@@ -10,7 +10,7 @@ endif()
 
 # Grab the version
 file(READ "src/version.h" ver)
-if (NOT ${ver} MATCHES "COMPILER_VERSION \"([0-9]+.[0-9]+.[0-9]+)\"")
+if (NOT ${ver} MATCHES "COMPILER_VERSION \"([0-9]+.[0-9]+.[0-9]+)(_[0-9]+)?\"")
     message(FATAL_ERROR "Compiler version could not be parsed from version.h")
 endif()
 
@@ -81,7 +81,17 @@ if(MSVC)
     # Suppresses the LNK4098 mismatch warning in Debug builds
     set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} /NODEFAULTLIB:libcmtd /NODEFAULTLIB:msvcrtd")
 else()
-    add_compile_options(-gdwarf-3 -fno-exceptions)
+    add_compile_options(-fno-exceptions)
+    if (NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+        add_compile_options(-gdwarf-3)
+    else()
+        if (APPLE)
+            add_link_options("-Wl,-S")
+        else()
+            # This covers Linux, BSD, and MinGW on Windows
+            add_link_options("-s")
+        endif()
+    endif()
 
     #add_compile_options(-fsanitize=address,undefined)
     #add_link_options(-fsanitize=address,undefined)
@@ -120,6 +130,7 @@ set(C3_OPTIONS
         C3_LLD_DIR
         C3_ENABLE_CLANGD_LSP
         LLVM_CRT_LIBRARY_DIR
+        C3_AVR_DISABLE
 )
 
 set(C3_USE_MIMALLOC OFF)
@@ -204,7 +215,7 @@ if(C3_WITH_LLVM)
             set(C3_LLVM_RELEASE_PATH "download/${C3_LLVM_TAG}")
         endif()
 
-        set(C3_LLVM_URL "https://github.com/c3lang/llvm-for-c3/releases/${C3_LLVM_RELEASE_PATH}/${C3_LLVM_ARTIFACT_NAME}.tar.gz")
+        set(C3_LLVM_URL "https://github.com/c3lang/llvm-for-c3/releases/${C3_LLVM_RELEASE_PATH}/${C3_LLVM_ARTIFACT_NAME}.tar.xz")
 
         message(STATUS "Fetching ${C3_LLVM_TYPE} LLVM artifact for ${C3_LLVM_PLATFORM}...")
         message(STATUS "URL: ${C3_LLVM_URL}")
@@ -417,9 +428,50 @@ if(C3_WITH_LLVM)
 
     message(STATUS "Linking to llvm libs ${llvm_libs}")
     message(STATUS "Linking to lld libs ${lld_libs}")
+
+    if (MSVC)
+        # LLVM artifacts may contain absolute paths to diaguids.lib from a different VS version.
+        # Find the local diaguids.lib and replace the paths in LLVM targets.
+        find_library(DIA_SDK_LIB NAMES diaguids.lib
+            HINTS
+                "$ENV{VSINSTALLDIR}/DIA SDK/lib/amd64"
+                "$ENV{VCINSTALLDIR}/../DIA SDK/lib/amd64"
+        )
+        if (NOT DIA_SDK_LIB)
+            set(_vswhere "C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe")
+            if (EXISTS "${_vswhere}")
+                execute_process(
+                    COMMAND "${_vswhere}" -latest -property installationPath
+                    OUTPUT_VARIABLE _vs_install_dir
+                    OUTPUT_STRIP_TRAILING_WHITESPACE
+                )
+                find_library(DIA_SDK_LIB NAMES diaguids.lib HINTS "${_vs_install_dir}/DIA SDK/lib/amd64")
+            endif()
+        endif()
+
+        if (DIA_SDK_LIB)
+            foreach(_tgt ${llvm_libs})
+                if (TARGET ${_tgt})
+                    get_target_property(_link_libs ${_tgt} INTERFACE_LINK_LIBRARIES)
+                    if (_link_libs AND _link_libs MATCHES "diaguids\\.lib")
+                        list(TRANSFORM _link_libs REPLACE ".*diaguids\\.lib$" "${DIA_SDK_LIB}")
+                        set_target_properties(${_tgt} PROPERTIES INTERFACE_LINK_LIBRARIES "${_link_libs}")
+                    endif()
+                endif()
+            endforeach()
+        endif()
+    endif()
 endif()
 
 add_library(miniz STATIC dependencies/miniz/miniz.c)
+
+if (CMAKE_C_COMPILER_ID MATCHES "GNU")
+    set_source_files_properties(
+        dependencies/miniz/miniz.c
+        PROPERTIES
+        COMPILE_OPTIONS "-fno-analyzer"
+    )
+endif()
 
 add_executable(c3c
         src/build/builder.c
@@ -440,6 +492,7 @@ add_executable(c3c
         src/compiler/float.c
         src/compiler/headers.c
         src/compiler/json_output.c
+        src/compiler/docgen.c
         src/compiler/lexer.c
         src/compiler/linker.c
         src/compiler/abi/c_abi_aarch64.c
@@ -510,7 +563,14 @@ add_executable(c3c
         src/build/common_build.c
         src/compiler/sema_const.c
         ${CMAKE_BINARY_DIR}/git_hash.h
+        ${CMAKE_BINARY_DIR}/docs_template.h
 )
+
+# Building C3 with llvm toolchains that don't have AVR Support
+if(C3_AVR_DISABLE)
+    message(STATUS "AVR support is disabled")
+	target_compile_definitions(c3c PRIVATE AVR_DISABLE)
+endif()
 
 if(EXISTS "${CMAKE_SOURCE_DIR}/.git")
     # We are inside of a git repository so rebuilding the hash every time something changes.
@@ -524,6 +584,18 @@ else()
             OUTPUT ${CMAKE_BINARY_DIR}/git_hash.h
             COMMAND ${CMAKE_COMMAND} -P "${CMAKE_CURRENT_LIST_DIR}/git_hash.cmake")
 endif()
+
+# Embed resources/docs.html into a C header
+add_custom_command(
+        OUTPUT ${CMAKE_BINARY_DIR}/docs_template.h
+        COMMAND ${CMAKE_COMMAND}
+            -DINPUT=${CMAKE_SOURCE_DIR}/resources/docs.html
+            -DOUTPUT=${CMAKE_BINARY_DIR}/docs_template.h
+            -DVAR_NAME=docs_html
+            -P ${CMAKE_SOURCE_DIR}/scripts/embed.cmake
+        DEPENDS ${CMAKE_SOURCE_DIR}/resources/docs.html
+                ${CMAKE_SOURCE_DIR}/scripts/embed.cmake
+        COMMENT "Embedding resources/docs.html into docs_template.h")
 
 if(C3_WITH_LLVM)
     target_sources(c3c PRIVATE
@@ -740,6 +812,7 @@ if(CMAKE_C_COMPILER_ID STREQUAL "TinyCC")
 endif()
 
 install(TARGETS c3c DESTINATION bin)
+install(CODE "file(REMOVE_RECURSE \"\${CMAKE_INSTALL_PREFIX}/lib/c3/std\")")
 install(DIRECTORY lib/ DESTINATION lib/c3)
 
 # Man page install (OSX/Linux only)

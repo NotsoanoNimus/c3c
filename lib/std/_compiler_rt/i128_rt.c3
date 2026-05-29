@@ -265,8 +265,8 @@ fn int128 __ashlti3(int128 a, uint b) @cname("__ashlti3") @weak @nostrip
 	result.all = (uint128)a;
 	if (b >= 64)
 	{
-		result.low = 0;
 		result.high = result.low << (b - 64);
+		result.low = 0;
 	}
 	else
 	{
@@ -430,7 +430,7 @@ macro float_from_u128($Type, uint128 a) @private
 macro fixuint(a) @private
 {
 	var $Rep;
-	$switch $typeof(a):
+	$switch $Typeof(a):
 		$case double:
 			$Rep = ulong;
 			const EXPONENT_BITS = 11;
@@ -474,7 +474,7 @@ macro fixuint(a) @private
 macro fixint(a) @private
 {
 	var $Rep;
-	$switch $typeof(a):
+	$switch $Typeof(a):
 		$case double:
 			$Rep = ulong;
 			const EXPONENT_BITS = 11;

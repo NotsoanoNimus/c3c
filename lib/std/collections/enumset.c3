@@ -9,7 +9,7 @@ module std::collections::enumset <Enum>;
 import std::io;
 
 const ENUM_COUNT @private = Enum::values.len;
-alias EnumSetType @private = $typefrom(type_for_enum_elements(ENUM_COUNT));
+alias EnumSetType @private = type_for_enum_elements(ENUM_COUNT);
 
 const IS_CHAR_ARRAY = ENUM_COUNT > 128;
 typedef EnumSet (Printable) = EnumSetType;
@@ -19,7 +19,7 @@ fn void EnumSet.add(&self, Enum v)
 	$if IS_CHAR_ARRAY:
 		((EnumSetType*)self).[(usz)v.ordinal / 8] |= (char)(1u << ((usz)v.ordinal % 8));
 	$else
-		*self = (EnumSet)((EnumSetType)*self | 1u << (EnumSetType)v.ordinal);
+		*self = (EnumSet)((EnumSetType)*self | (EnumSetType)1 << v.ordinal);
 	$endif
 }
 
@@ -36,7 +36,7 @@ fn bool EnumSet.remove(&self, Enum v)
 		return true;
 	$else
 		EnumSetType old = (EnumSetType)*self;
-		EnumSetType new = old & ~(1u << (EnumSetType)v.ordinal);
+		EnumSetType new = old & ~((EnumSetType)1 << v.ordinal);
 		*self = (EnumSet)new;
 		return old != new;
 	$endif
@@ -47,7 +47,7 @@ fn bool EnumSet.has(&self, Enum v)
 	$if IS_CHAR_ARRAY:
 		return (bool)((((EnumSetType*)self).[(usz)v.ordinal / 8] >> ((usz)v.ordinal % 8)) & 0x01);
 	$else
-		return ((EnumSetType)*self & (1u << (EnumSetType)v.ordinal)) != 0;
+		return ((EnumSetType)*self & ((EnumSetType)1 << v.ordinal)) != 0;
 	$endif
 }
 
@@ -142,16 +142,16 @@ macro typeid type_for_enum_elements(sz $elements) @local
 {
 	$switch:
 		$case ($elements > 128):
-			return char[($elements + 7) / 8]::typeid;
+			return char[($elements + 7) / 8];
 		$case ($elements > 64):
-			return uint128::typeid;
+			return uint128;
 		$case ($elements > 32 || $$C_INT_SIZE > 32):
-			return ulong::typeid;
+			return ulong;
 		$case ($elements > 16 || $$C_INT_SIZE > 16):
-			return uint::typeid;
+			return uint;
 		$case ($elements > 8 || $$C_INT_SIZE > 8):
-			return ushort::typeid;
+			return ushort;
 		$default:
-			return char::typeid;
+			return char;
 	$endswitch
 }

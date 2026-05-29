@@ -1,5 +1,5 @@
 # C3 Language
-<img src="https://c3-lang.org/logo.svg" align="right" height="120" />
+<img src="https://c3-lang.org/assets/logo.svg" align="right" height="120" />
 
 C3 is a programming language that builds on the syntax and semantics of the C language,
 with the goal of evolving it while still retaining familiarity for C programmers.
@@ -152,9 +152,9 @@ fn void main()
 
 ### Current status
 
-The current stable version of the compiler is **version 0.7.11**.
+The current stable version of the compiler is **version 0.8.0**.
 
-The upcoming 0.8.0 release will introduce breaking changes, including the removal of deprecated functionality and a major transition from unsigned to signed sizes by default.
+The upcoming 0.8.1 release will further refine the standard library.
 Follow the issues [here](https://github.com/c3lang/c3c/issues).
 
 If you have suggestions on how to improve the language, either [file an issue](https://github.com/c3lang/c3c/issues)
@@ -379,7 +379,8 @@ For Gentoo-specific issues, please use the [Gentoo Bugzilla](https://bugs.gentoo
 2. Download the zip file: [https://github.com/c3lang/c3c/releases/latest/download/c3-macos.zip](https://github.com/c3lang/c3c/releases/latest/download/c3-macos.zip)
    (debug version [here](https://github.com/c3lang/c3c/releases/latest/download/c3-macos-debug.zip))
 3. Unzip executable and standard lib.
-4. Run `./c3c`.
+4. Because it is not signed, you need to approve it: `xattr -d com.apple.quarantine c3c`
+5. Run `./c3c`.
 
 (*Note that there is a known issue with debug symbol generation on MacOS 13, see [issue #1086](https://github.com/c3lang/c3c/issues/1086))
 
@@ -449,7 +450,7 @@ called `hello_world` or `hello_world.exe`depending on platform.
 2. Install CMake
 3. Clone the C3C github repository: `git clone https://github.com/c3lang/c3c.git`
 4. Enter the C3C directory: `cd c3c`.
-5. Set up the CMake build: `cmake --preset windows-vs-2022-release`
+5. Set up the CMake build: `cmake --preset windows-vs-2022-release -D C3_FETCH_LLVM=ON`
 6. Build: `cmake --build --preset windows-vs-2022-release`
 
 You should now have a `c3c` executable in `build\Release`.
@@ -464,7 +465,7 @@ Building `c3c` using Visual Studio Code is also supported when using the `CMake 
 > **Debug Build:**
 > To avoid LLVM library conflicts, configure and build using the debug preset instead:
 > ```bash
-> cmake --preset windows-vs-2022-debug
+> cmake --preset windows-vs-2022-debug -D C3_FETCH_LLVM=ON
 > cmake --build --preset windows-vs-2022-debug
 > ```
 > *(Your executable will be located in `build-debug\Debug`)*
