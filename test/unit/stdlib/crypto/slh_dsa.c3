@@ -37,13 +37,13 @@ import std::crypto @public, std::bits;
 
 fn void to_uint128()
 {
-	char[8] tmp @align(ulong.sizeof);
+	char[8] tmp @align(ulong::size);
 	for (usz i = 0; i < 256; i++)
 	{
 		if (csprng_supported) entropy::fill(tmp[..])!!;
 		if (!csprng_supported) tmp[7] = (char)i;
 		ulong num = env::BIG_ENDIAN ??? *(ulong*)tmp : bswap(*(ulong*)&tmp);
-		test::eq(num, slh_dsa::to_uint128(tmp, ulong.sizeof));
+		test::eq(num, slh_dsa::to_uint128(tmp, ulong::size));
 	}
 }
 
@@ -60,15 +60,15 @@ fn void base_2b()
 	uint128[16] split = slh_dsa::base_2b(input, 4, 16);
 	for (usz bits = 0; bits < 32; bits += 4)
 	{
-		test::eq(split[bits >> 2], (input[bits >> 3] & (0x0F << ((bits+4) % 8))) >> ((bits+4) % 8));
+		test::eq(split[bits >> 2], (uint128)(input[bits >> 3] & (0x0F << ((bits+4) % 8))) >> ((bits+4) % 8));
 	}
 
 	uint128[5] s = slh_dsa::base_2b(x'7777', 3, 5);   // 0b0111_0111_0111_0111, split bits into 5 groups of 3
-	test::eq(s[0], 0b011);
-	test::eq(s[1], 0b101);
-	test::eq(s[2], 0b110);
-	test::eq(s[3], 0b111);
-	test::eq(s[4], 0b011);
+	test::eq(s[0], 0b011ULL);
+	test::eq(s[1], 0b101ULL);
+	test::eq(s[2], 0b110ULL);
+	test::eq(s[3], 0b111ULL);
+	test::eq(s[4], 0b011ULL);
 }
 
 

@@ -40,7 +40,7 @@ import std::math, std::bits;
 <*
  Compile-time 'ceil' implementation.
 
- @require $val < uint.max
+ @require $val < uint::max
 *>
 macro uint @ct_ceil($val) @const => (uint)$val + ((double)(uint)$val < $val ? 1 : 0);
 
@@ -183,7 +183,7 @@ struct ForsKeygenAddress @packed   // type = FORS_PRF
 	uint index;
 }
 
-struct SlhDsaAddress @align(uint.sizeof) @packed
+struct SlhDsaAddress @align(uint::size) @packed
 {
 	uint layer;   // height of an XMSS tree within the hypertree
 	uint[3] tree;   // position of an XMSS tree within a layer of the hypertree
@@ -207,15 +207,15 @@ fn void SlhDsaAddress.set_tree_address(&self, uint128 t) => @as_char_view(self.t
 fn void SlhDsaAddress.set_type_and_clear(&self, SlhDsaAddressType y)
 {
 	mem::zero_volatile(@as_char_view(*self)[16..]);
-	@as_char_view(self.type)[..] = to_byte(y, uint.sizeof)[..];
+	@as_char_view(self.type)[..] = to_byte(y, uint::size)[..];
 }
-fn void SlhDsaAddress.set_key_pair_address(&self, uint128 i) => @as_char_view(self.wots_hash.key_pair)[..] = to_byte(i, uint.sizeof)[..];
-fn void SlhDsaAddress.set_chain_address(&self, uint128 i) => @as_char_view(self.wots_hash.chain)[..] = to_byte(i, uint.sizeof)[..];
+fn void SlhDsaAddress.set_key_pair_address(&self, uint128 i) => @as_char_view(self.wots_hash.key_pair)[..] = to_byte(i, uint::size)[..];
+fn void SlhDsaAddress.set_chain_address(&self, uint128 i) => @as_char_view(self.wots_hash.chain)[..] = to_byte(i, uint::size)[..];
 macro SlhDsaAddress.set_tree_height(&self, uint128 i) => self.set_chain_address(i);
-fn void SlhDsaAddress.set_hash_address(&self, uint128 i) => @as_char_view(self.wots_hash.hash)[..] = to_byte(i, uint.sizeof)[..];
+fn void SlhDsaAddress.set_hash_address(&self, uint128 i) => @as_char_view(self.wots_hash.hash)[..] = to_byte(i, uint::size)[..];
 macro SlhDsaAddress.set_tree_index(&self, uint128 i) => self.set_hash_address(i);
-fn uint128 SlhDsaAddress.get_key_pair_address(&self) => to_uint128(@as_char_view(self.wots_hash.key_pair), uint.sizeof);
-fn uint128 SlhDsaAddress.get_tree_index(&self) => to_uint128(@as_char_view(self.wots_hash.hash), uint.sizeof);
+fn uint128 SlhDsaAddress.get_key_pair_address(&self) => to_uint128(@as_char_view(self.wots_hash.key_pair), uint::size);
+fn uint128 SlhDsaAddress.get_tree_index(&self) => to_uint128(@as_char_view(self.wots_hash.hash), uint::size);
 
 
 <*
@@ -264,8 +264,8 @@ fn bool SlhDsaKeyPair.eq(&self, SlhDsaKeyPair other) @operator(==) => member_eq(
  NOTE: Per specification requirements, a random number generator with a strength of _at least_ `8N` bits _must_ be used.
 
  @require @in(NODE_BITS, 128, 192, 256) : "The SLH-DSA 'n' value must be a supported integer length (128, 192, or 256 bits)."
- @require $typeof(HASH_TYPE) == SlhDsaHashType : "`HASH_TYPE` must be a valid value from the `SlhDsaHashType` enum."
- @require $typeof(MODE) == SlhDsaMode : "`MODE` must be a valid value from the `SlhDsaMode` enum."
+ @require $Typeof(HASH_TYPE) == SlhDsaHashType : "`HASH_TYPE` must be a valid value from the `SlhDsaHashType` enum."
+ @require $Typeof(MODE) == SlhDsaMode : "`MODE` must be a valid value from the `SlhDsaMode` enum."
 *>
 module std::crypto::slh_dsa <NODE_BITS, HASH_TYPE, MODE> @private;
 
@@ -306,7 +306,7 @@ fn KeyPair? keygen() @public
 fn char[]? sign(Allocator allocator, PrivateKey privkey, char[] message, char[] context = {},
 	bool hedged = true, Node additional_randomness = {}) @public => @pool()
 {
-	char[] res = alloc::new_array(allocator, char, SlhDsaSignature.sizeof);
+	char[] res = alloc::new_array(allocator, char, SlhDsaSignature::size);
 	if (hedged && additional_randomness == (Node){}) entropy::fill(additional_randomness[..])!;
 	char[] message_p = alloc::alloc_array(tmem, char, 1 + 1 + context.len + message.len);
 	message_p[0] = 0;
@@ -332,7 +332,7 @@ fn char[]? hash_sign(Allocator allocator, PrivateKey privkey, char[] message, Sl
 {
 	char[64] tmp_hash;
 	char[] hash;
-	char[] res = alloc::alloc_array(allocator, char, SlhDsaSignature.sizeof);
+	char[] res = alloc::alloc_array(allocator, char, SlhDsaSignature::size);
 	if (hedged && additional_randomness == (Node){}) entropy::fill(additional_randomness[..])!;
 	switch (pre_hash)
 	{
@@ -714,7 +714,7 @@ fn Node xmss_pk_from_sig(uint128 index, XmssSignature sig, Node m, PublicKey pub
 //
 
 <* A hypertree signature consists of `d` XMSS signatures, from lowest to uppermost. *>
-const uint HYPERTREE_SIGNATURE_LEN = (PARAMS.h + (PARAMS.d * WOTS_LEN)) * NODE_BYTES;   // alt: PARAMS.d * XmssSignature.sizeof
+const uint HYPERTREE_SIGNATURE_LEN = (PARAMS.h + (PARAMS.d * WOTS_LEN)) * NODE_BYTES;   // alt: PARAMS.d * XmssSignature::size
 
 struct HypertreeSignature @packed
 {
